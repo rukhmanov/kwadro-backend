@@ -7,6 +7,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
+import { TelegramService } from '../telegram/telegram.service';
 
 @WebSocketGateway({
   cors: {
@@ -19,14 +20,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private clientSessions = new Map<string, string>(); // client.id -> sessionId
 
-  constructor(private chatService: ChatService) {}
+  constructor(
+    private chatService: ChatService,
+    private telegramService: TelegramService,
+  ) {}
 
   async handleConnection(client: Socket) {
-    console.log(`Client connected: ${client.id}`);
   }
 
   handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
     this.clientSessions.delete(client.id);
   }
 
@@ -38,9 +40,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Присоединяем клиента к комнате сессии
     client.join(`session:${sessionId}`);
     
+    // Получаем или создаем сессию для получения номера чата
+    const session = await this.chatService.getOrCreateSession(sessionId);
+    
     // Загружаем сообщения сессии
     const messages = await this.chatService.getSessionMessages(sessionId);
     client.emit('messages', messages);
+    
+    // Отправляем номер чата клиенту
+    client.emit('chat-number', { chatNumber: session.id });
   }
 
   @SubscribeMessage('message')
@@ -60,6 +68,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.clientSessions.set(client.id, sessionId);
     client.join(`session:${sessionId}`);
 
+    // Получаем сессию для получения номера чата
+    const session = await this.chatService.getOrCreateSession(sessionId);
+    const chatNumber = session.id;
+
     // Создаем сообщение
     const chatMessage = await this.chatService.createMessage(sessionId, {
       username,
@@ -73,8 +85,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Если это сообщение от пользователя (не админа), отправляем автоматический ответ
     if (!isAdmin) {
+      // Отправляем сообщение в Telegram группу с номером чата
+      this.telegramService.sendChatMessageToTelegram(username, message, chatNumber, phone).catch((error) => {
+        console.error('Ошибка при отправке сообщения в Telegram:', error);
+      });
+
       // Уведомляем админов о новом сообщении
-      const session = await this.chatService.getSessionById(sessionId);
       this.server.emit('new-chat-session', {
         sessionId,
         session,

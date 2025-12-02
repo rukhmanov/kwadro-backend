@@ -18,11 +18,13 @@ import { NewsModule } from './news/news.module';
 import { CartModule } from './cart/cart.module';
 import { ChatModule } from './chat/chat.module';
 import { ContactModule } from './contact/contact.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: '.env',
     }),
     TypeOrmModule.forRoot({
       type: 'postgres',
@@ -41,6 +43,7 @@ import { ContactModule } from './contact/contact.module';
     CartModule,
     ChatModule,
     ContactModule,
+    TelegramModule,
   ],
   controllers: [AppController],
   providers: [AppService],
