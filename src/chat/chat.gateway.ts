@@ -135,6 +135,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Отправляем сообщение в сессию
     this.server.to(`session:${sessionId}`).emit('message', chatMessage);
     
+    // Также отправляем сообщение отправителю (администратору), чтобы он видел его сразу
+    client.emit('message', {
+      ...chatMessage,
+      sessionId: sessionId
+    });
+    
     // Помечаем сессию как прочитанную
     await this.chatService.markSessionAsRead(sessionId);
   }
