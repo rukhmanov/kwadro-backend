@@ -5,16 +5,16 @@ export class ContactRequest {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ nullable: true })
   name: string;
 
-  @Column()
+  @Column({ nullable: true })
   email: string;
 
   @Column({ nullable: true })
   phone: string;
 
-  @Column('text')
+  @Column({ type: 'text', nullable: true })
   message: string;
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })

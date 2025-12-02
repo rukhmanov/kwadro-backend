@@ -209,6 +209,44 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     await this.sendMessageToGroup(groupId, text);
   }
 
+  /**
+   * Отправляет форму обратной связи в Telegram группу
+   * @param name Имя пользователя
+   * @param phone Телефон (опционально)
+   * @param email Email (опционально)
+   * @param message Сообщение (опционально)
+   */
+  async sendContactFormToTelegram(name: string, phone?: string, email?: string, message?: string): Promise<void> {
+    const groupId = this.configService.get<string>('TELEGRAM_GROUP_ID') || 
+                    process.env.TELEGRAM_GROUP_ID || 
+                    '';
+
+    if (!groupId) {
+      this.logger.warn('TELEGRAM_GROUP_ID не установлен. Сообщение не будет отправлено в Telegram.');
+      return;
+    }
+
+    let text = `<b>📝 Обратная связь</b>\n\n`;
+    
+    if (name) {
+      text += `<b>Имя:</b> ${this.escapeHtml(name)}\n`;
+    }
+    
+    if (phone) {
+      text += `<b>Телефон:</b> ${this.escapeHtml(phone)}\n`;
+    }
+    
+    if (email) {
+      text += `<b>Email:</b> ${this.escapeHtml(email)}\n`;
+    }
+    
+    if (message) {
+      text += `\n<b>Сообщение:</b>\n${this.escapeHtml(message)}`;
+    }
+
+    await this.sendMessageToGroup(groupId, text);
+  }
+
   private escapeHtml(text: string): string {
     return text
       .replace(/&/g, '&amp;')
