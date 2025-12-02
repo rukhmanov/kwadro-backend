@@ -1,4 +1,5 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import { ChatSession } from './chat-session.entity';
 
 @Entity('chat_messages')
 export class ChatMessage {
@@ -14,7 +15,17 @@ export class ChatMessage {
   @Column({ default: false })
   isAdmin: boolean;
 
-  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ nullable: true })
+  phone: string; // Номер телефона пользователя (если указан)
+
+  @ManyToOne(() => ChatSession, session => session.messages, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'sessionId' })
+  session: ChatSession;
+
+  @Column({ nullable: true })
+  sessionId: number;
+
+  @CreateDateColumn()
   createdAt: Date;
 }
 

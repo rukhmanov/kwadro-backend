@@ -9,6 +9,7 @@ import { User } from './entities/user.entity';
 import { News } from './entities/news.entity';
 import { CartItem } from './entities/cart-item.entity';
 import { ChatMessage } from './entities/chat-message.entity';
+import { ChatSession } from './entities/chat-session.entity';
 import { ContactRequest } from './entities/contact-request.entity';
 import { CategoriesModule } from './categories/categories.module';
 import { ProductsModule } from './products/products.module';
@@ -30,7 +31,7 @@ import { ContactModule } from './contact/contact.module';
       username: process.env.DB_USER || 'aleksrukhmanov',
       password: process.env.DB_PASSWORD || '',
       database: process.env.DB_NAME || 'kwadro_shop',
-      entities: [Category, Product, User, News, CartItem, ChatMessage, ContactRequest],
+      entities: [Category, Product, User, News, CartItem, ChatMessage, ChatSession, ContactRequest],
       synchronize: true,
     }),
     CategoriesModule,
