@@ -19,6 +19,7 @@ import { CartModule } from './cart/cart.module';
 import { ChatModule } from './chat/chat.module';
 import { ContactModule } from './contact/contact.module';
 import { TelegramModule } from './telegram/telegram.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { TelegramModule } from './telegram/telegram.module';
     ChatModule,
     ContactModule,
     TelegramModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [AppService],

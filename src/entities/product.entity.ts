@@ -25,6 +25,9 @@ export class Product {
   images: string[];
 
   @Column({ nullable: true })
+  video: string;
+
+  @Column({ nullable: true })
   engine: string;
 
   @Column({ nullable: true })

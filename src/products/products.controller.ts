@@ -1,11 +1,16 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, NotFoundException, UseInterceptors, UploadedFile, UploadedFiles } from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor, AnyFilesInterceptor } from '@nestjs/platform-express';
 import { ProductsService } from './products.service';
 import { Product } from '../entities/product.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { StorageService } from '../storage/storage.service';
 
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly storageService: StorageService,
+  ) {}
 
   @Get()
   findAll(@Query('categoryId') categoryId?: string): Promise<Product[]> {
@@ -26,13 +31,111 @@ export class ProductsController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  create(@Body() product: Partial<Product>): Promise<Product> {
+  @UseInterceptors(AnyFilesInterceptor())
+  async create(
+    @Body() productData: any,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ): Promise<Product> {
+    let product: Partial<Product>;
+    
+    // Пытаемся распарсить JSON из поля product, если оно есть
+    if (productData.product && typeof productData.product === 'string') {
+      try {
+        product = JSON.parse(productData.product);
+      } catch {
+        product = productData;
+      }
+    } else {
+      product = productData;
+    }
+    
+    if (files && files.length > 0) {
+      // Разделяем файлы по типам
+      const imageFiles: Express.Multer.File[] = [];
+      let videoFile: Express.Multer.File | null = null;
+
+      for (const file of files) {
+        if (file.fieldname === 'video' || file.mimetype.startsWith('video/')) {
+          videoFile = file;
+        } else if (file.fieldname === 'images' || file.mimetype.startsWith('image/')) {
+          imageFiles.push(file);
+        }
+      }
+
+      // Загружаем главное изображение, если оно есть
+      if (imageFiles.length > 0) {
+        const mainImage = await this.storageService.uploadFile(imageFiles[0], 'products');
+        product.image = mainImage;
+        
+        // Загружаем дополнительные изображения, если они есть
+        if (imageFiles.length > 1) {
+          const additionalImages = await this.storageService.uploadFiles(imageFiles.slice(1), 'products');
+          product.images = additionalImages;
+        }
+      }
+
+      // Загружаем видео, если оно есть
+      if (videoFile) {
+        const videoKey = await this.storageService.uploadFile(videoFile, 'products');
+        product.video = videoKey;
+      }
+    }
+    
     return this.productsService.create(product);
   }
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
-  async update(@Param('id') id: string, @Body() product: Partial<Product>): Promise<Product> {
+  @UseInterceptors(AnyFilesInterceptor())
+  async update(
+    @Param('id') id: string,
+    @Body() productData: any,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ): Promise<Product> {
+    let product: Partial<Product>;
+    
+    // Пытаемся распарсить JSON из поля product, если оно есть
+    if (productData.product && typeof productData.product === 'string') {
+      try {
+        product = JSON.parse(productData.product);
+      } catch {
+        product = productData;
+      }
+    } else {
+      product = productData;
+    }
+    
+    if (files && files.length > 0) {
+      // Разделяем файлы по типам
+      const imageFiles: Express.Multer.File[] = [];
+      let videoFile: Express.Multer.File | null = null;
+
+      for (const file of files) {
+        if (file.fieldname === 'video' || file.mimetype.startsWith('video/')) {
+          videoFile = file;
+        } else if (file.fieldname === 'images' || file.mimetype.startsWith('image/')) {
+          imageFiles.push(file);
+        }
+      }
+
+      // Загружаем новые изображения, если они есть
+      if (imageFiles.length > 0) {
+        const mainImage = await this.storageService.uploadFile(imageFiles[0], 'products');
+        product.image = mainImage;
+        
+        if (imageFiles.length > 1) {
+          const additionalImages = await this.storageService.uploadFiles(imageFiles.slice(1), 'products');
+          product.images = additionalImages;
+        }
+      }
+
+      // Загружаем новое видео, если оно есть
+      if (videoFile) {
+        const videoKey = await this.storageService.uploadFile(videoFile, 'products');
+        product.video = videoKey;
+      }
+    }
+    
     const updated = await this.productsService.update(+id, product);
     if (!updated) {
       throw new NotFoundException('Товар не найден');
