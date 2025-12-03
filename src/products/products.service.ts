@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from '../entities/product.entity';
+import { CartItem } from '../entities/cart-item.entity';
 import { StorageService } from '../storage/storage.service';
 
 @Injectable()
@@ -9,6 +10,8 @@ export class ProductsService {
   constructor(
     @InjectRepository(Product)
     private productsRepository: Repository<Product>,
+    @InjectRepository(CartItem)
+    private cartItemsRepository: Repository<CartItem>,
     private storageService: StorageService,
   ) {}
 
@@ -144,16 +147,55 @@ export class ProductsService {
     // Получаем продукт напрямую из БД (без преобразования URL)
     const product = await this.productsRepository.findOne({ where: { id } });
     if (product) {
-      // Удаляем изображения из S3 (в БД хранятся ключи)
-      if (product.image) {
-        await this.storageService.deleteFile(product.image);
-      }
-      if (product.images && product.images.length > 0) {
-        await this.storageService.deleteFiles(product.images);
-      }
-      // Удаляем видео из S3
-      if (product.video) {
-        await this.storageService.deleteFile(product.video);
+      try {
+        // Сначала удаляем все записи из корзины, связанные с этим товаром
+        try {
+          await this.cartItemsRepository.delete({ productId: id });
+        } catch (error) {
+          console.error('Ошибка при удалении записей корзины:', error);
+          // Продолжаем удаление товара даже если записи корзины не удалось удалить
+        }
+
+        // Удаляем изображения из S3 (в БД хранятся ключи)
+        if (product.image) {
+          const imageKey = this.extractKeyFromUrl(product.image);
+          if (imageKey) {
+            try {
+              await this.storageService.deleteFile(imageKey);
+            } catch (error) {
+              console.error('Ошибка при удалении главного изображения:', error);
+              // Продолжаем удаление товара даже если файл не удалось удалить
+            }
+          }
+        }
+        if (product.images && product.images.length > 0) {
+          const imageKeys = product.images
+            .map(img => this.extractKeyFromUrl(img))
+            .filter((key): key is string => key !== null);
+          if (imageKeys.length > 0) {
+            try {
+              await this.storageService.deleteFiles(imageKeys);
+            } catch (error) {
+              console.error('Ошибка при удалении дополнительных изображений:', error);
+              // Продолжаем удаление товара даже если файлы не удалось удалить
+            }
+          }
+        }
+        // Удаляем видео из S3
+        if (product.video) {
+          const videoKey = this.extractKeyFromUrl(product.video);
+          if (videoKey) {
+            try {
+              await this.storageService.deleteFile(videoKey);
+            } catch (error) {
+              console.error('Ошибка при удалении видео:', error);
+              // Продолжаем удаление товара даже если файл не удалось удалить
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Ошибка при удалении файлов товара:', error);
+        // Продолжаем удаление товара из БД даже если файлы не удалось удалить
       }
     }
     await this.productsRepository.delete(id);
