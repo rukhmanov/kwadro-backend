@@ -1,5 +1,6 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { Category } from './category.entity';
+import { ProductSpecification } from './product-specification.entity';
 
 @Entity('products')
 export class Product {
@@ -27,12 +28,6 @@ export class Product {
   @Column({ nullable: true })
   video: string;
 
-  @Column({ nullable: true })
-  engine: string;
-
-  @Column({ nullable: true })
-  power: string;
-
   @Column({ default: 0 })
   stock: number;
 
@@ -45,6 +40,9 @@ export class Product {
 
   @Column()
   categoryId: number;
+
+  @OneToMany(() => ProductSpecification, (spec) => spec.product, { cascade: true })
+  specifications: ProductSpecification[];
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;

@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from '../entities/product.entity';
 import { CartItem } from '../entities/cart-item.entity';
+import { ProductSpecification } from '../entities/product-specification.entity';
+import { CategorySpecification } from '../entities/category-specification.entity';
 import { StorageService } from '../storage/storage.service';
 
 @Injectable()
@@ -12,6 +14,10 @@ export class ProductsService {
     private productsRepository: Repository<Product>,
     @InjectRepository(CartItem)
     private cartItemsRepository: Repository<CartItem>,
+    @InjectRepository(ProductSpecification)
+    private productSpecsRepository: Repository<ProductSpecification>,
+    @InjectRepository(CategorySpecification)
+    private categorySpecsRepository: Repository<CategorySpecification>,
     private storageService: StorageService,
   ) {}
 
@@ -45,7 +51,7 @@ export class ProductsService {
   async findAll(): Promise<Product[]> {
     const products = await this.productsRepository.find({ 
       where: { isActive: true },
-      relations: ['category'],
+      relations: ['category', 'specifications'],
       order: { createdAt: 'DESC' },
     });
     return Promise.all(products.map(p => this.transformProduct(p)));
@@ -54,7 +60,7 @@ export class ProductsService {
   async findByCategory(categoryId: number): Promise<Product[]> {
     const products = await this.productsRepository.find({ 
       where: { categoryId, isActive: true },
-      relations: ['category'],
+      relations: ['category', 'specifications'],
       order: { createdAt: 'DESC' },
     });
     return Promise.all(products.map(p => this.transformProduct(p)));
@@ -63,15 +69,65 @@ export class ProductsService {
   async findOne(id: number): Promise<Product | null> {
     const product = await this.productsRepository.findOne({ 
       where: { id },
-      relations: ['category'],
+      relations: ['category', 'specifications'],
     });
     return product ? await this.transformProduct(product) : null;
   }
 
+  async getCategorySpecifications(categoryId: number): Promise<string[]> {
+    const specs = await this.categorySpecsRepository.find({
+      where: { categoryId },
+      select: ['name'],
+    });
+    // Возвращаем уникальные названия характеристик
+    return [...new Set(specs.map(s => s.name))];
+  }
+
   async create(product: Partial<Product>): Promise<Product> {
-    const newProduct = this.productsRepository.create(product);
+    const { specifications, ...productData } = product;
+    const newProduct = this.productsRepository.create(productData);
     const saved = await this.productsRepository.save(newProduct);
-    return await this.transformProduct(saved);
+
+    // Сохраняем характеристики товара
+    if (specifications && Array.isArray(specifications) && specifications.length > 0) {
+      const specsToSave = specifications.map((spec: { name: string; value: string }) => {
+        const productSpec = this.productSpecsRepository.create({
+          productId: saved.id,
+          name: spec.name,
+          value: spec.value,
+        });
+        return productSpec;
+      });
+      await this.productSpecsRepository.save(specsToSave);
+
+      // Сохраняем названия характеристик для категории (если их еще нет)
+      if (saved.categoryId) {
+        const existingCategorySpecs = await this.categorySpecsRepository.find({
+          where: { categoryId: saved.categoryId },
+        });
+        const existingNames = new Set(existingCategorySpecs.map(s => s.name));
+
+        const newCategorySpecs = specifications
+          .map((spec: { name: string; value: string }) => spec.name)
+          .filter((name: string) => !existingNames.has(name))
+          .map((name: string) => {
+            return this.categorySpecsRepository.create({
+              categoryId: saved.categoryId,
+              name: name,
+            });
+          });
+
+        if (newCategorySpecs.length > 0) {
+          await this.categorySpecsRepository.save(newCategorySpecs);
+        }
+      }
+    }
+
+    const result = await this.findOne(saved.id);
+    if (!result) {
+      throw new Error('Failed to create product');
+    }
+    return result;
   }
 
   private extractKeyFromUrl(url: string): string | null {
@@ -139,7 +195,50 @@ export class ProductsService {
       }
     }
 
-    await this.productsRepository.update(id, product);
+    const { specifications, ...productData } = product;
+    await this.productsRepository.update(id, productData);
+
+    // Обновляем характеристики товара
+    if (specifications !== undefined) {
+      // Удаляем старые характеристики
+      await this.productSpecsRepository.delete({ productId: id });
+
+      // Добавляем новые характеристики
+      if (Array.isArray(specifications) && specifications.length > 0) {
+        const specsToSave = specifications.map((spec: { name: string; value: string }) => {
+          return this.productSpecsRepository.create({
+            productId: id,
+            name: spec.name,
+            value: spec.value,
+          });
+        });
+        await this.productSpecsRepository.save(specsToSave);
+
+        // Обновляем список характеристик категории
+        const categoryId = productData.categoryId || existingProduct.categoryId;
+        if (categoryId) {
+          const existingCategorySpecs = await this.categorySpecsRepository.find({
+            where: { categoryId },
+          });
+          const existingNames = new Set(existingCategorySpecs.map(s => s.name));
+
+          const newCategorySpecs = specifications
+            .map((spec: { name: string; value: string }) => spec.name)
+            .filter((name: string) => !existingNames.has(name))
+            .map((name: string) => {
+              return this.categorySpecsRepository.create({
+                categoryId: categoryId,
+                name: name,
+              });
+            });
+
+          if (newCategorySpecs.length > 0) {
+            await this.categorySpecsRepository.save(newCategorySpecs);
+          }
+        }
+      }
+    }
+
     return await this.findOne(id);
   }
 

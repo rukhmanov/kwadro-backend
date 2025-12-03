@@ -11,6 +11,8 @@ import { CartItem } from './entities/cart-item.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { ChatSession } from './entities/chat-session.entity';
 import { ContactRequest } from './entities/contact-request.entity';
+import { ProductSpecification } from './entities/product-specification.entity';
+import { CategorySpecification } from './entities/category-specification.entity';
 import { CategoriesModule } from './categories/categories.module';
 import { ProductsModule } from './products/products.module';
 import { AuthModule } from './auth/auth.module';
@@ -34,7 +36,7 @@ import { StorageModule } from './storage/storage.module';
       username: process.env.DB_USER || 'aleksrukhmanov',
       password: process.env.DB_PASSWORD || '',
       database: process.env.DB_NAME || 'kwadro_shop',
-      entities: [Category, Product, User, News, CartItem, ChatMessage, ChatSession, ContactRequest],
+      entities: [Category, Product, User, News, CartItem, ChatMessage, ChatSession, ContactRequest, ProductSpecification, CategorySpecification],
       synchronize: true,
     }),
     CategoriesModule,

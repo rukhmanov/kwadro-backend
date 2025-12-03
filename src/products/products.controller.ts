@@ -20,6 +20,11 @@ export class ProductsController {
     return this.productsService.findAll();
   }
 
+  @Get('category/:categoryId/specifications')
+  async getCategorySpecifications(@Param('categoryId') categoryId: string): Promise<string[]> {
+    return this.productsService.getCategorySpecifications(+categoryId);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<Product> {
     const product = await this.productsService.findOne(+id);

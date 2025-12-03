@@ -1,5 +1,6 @@
 import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
 import { Product } from './product.entity';
+import { CategorySpecification } from './category-specification.entity';
 
 @Entity('categories')
 export class Category {
@@ -20,5 +21,8 @@ export class Category {
 
   @OneToMany(() => Product, (product) => product.category)
   products: Product[];
+
+  @OneToMany(() => CategorySpecification, (spec) => spec.category, { cascade: true })
+  specifications: CategorySpecification[];
 }
 
