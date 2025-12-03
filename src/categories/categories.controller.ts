@@ -42,5 +42,11 @@ export class CategoriesController {
   remove(@Param('id') id: string): Promise<void> {
     return this.categoriesService.remove(+id);
   }
+
+  @Post('reorder')
+  @UseGuards(JwtAuthGuard)
+  updateOrder(@Body() categoryOrders: { id: number; order: number }[]): Promise<void> {
+    return this.categoriesService.updateOrder(categoryOrders);
+  }
 }
 

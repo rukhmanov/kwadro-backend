@@ -11,14 +11,25 @@ export class CategoriesService {
   ) {}
 
   findAll(): Promise<Category[]> {
-    return this.categoriesRepository.find({ relations: ['products'] });
+    return this.categoriesRepository.find({ 
+      relations: ['products'],
+      order: { order: 'ASC' }
+    });
   }
 
   findOne(id: number): Promise<Category | null> {
     return this.categoriesRepository.findOne({ where: { id }, relations: ['products'] });
   }
 
-  create(category: Partial<Category>): Promise<Category> {
+  async create(category: Partial<Category>): Promise<Category> {
+    // Если order не указан, устанавливаем его как максимальный + 1
+    if (category.order === undefined || category.order === null) {
+      const maxOrder = await this.categoriesRepository
+        .createQueryBuilder('category')
+        .select('MAX(category.order)', 'max')
+        .getRawOne();
+      category.order = (maxOrder?.max || 0) + 1;
+    }
     const newCategory = this.categoriesRepository.create(category);
     return this.categoriesRepository.save(newCategory);
   }
@@ -30,6 +41,14 @@ export class CategoriesService {
 
   async remove(id: number): Promise<void> {
     await this.categoriesRepository.delete(id);
+  }
+
+  async updateOrder(categoryOrders: { id: number; order: number }[]): Promise<void> {
+    await Promise.all(
+      categoryOrders.map(({ id, order }) =>
+        this.categoriesRepository.update(id, { order })
+      )
+    );
   }
 }
 
