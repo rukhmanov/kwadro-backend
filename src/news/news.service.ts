@@ -12,11 +12,11 @@ export class NewsService {
     private storageService: StorageService,
   ) {}
 
-  private transformNews(news: News): News {
+  private async transformNews(news: News): Promise<News> {
     if (!news) return news;
     
     if (news.image) {
-      const url = this.storageService.getFileUrl(news.image);
+      const url = await this.storageService.getFileUrl(news.image);
       if (url) {
         news.image = url;
       }
@@ -29,18 +29,18 @@ export class NewsService {
     const newsList = await this.newsRepository.find({
       order: { createdAt: 'DESC' },
     });
-    return newsList.map(n => this.transformNews(n));
+    return Promise.all(newsList.map(n => this.transformNews(n)));
   }
 
   async findOne(id: number): Promise<News | null> {
     const news = await this.newsRepository.findOne({ where: { id } });
-    return news ? this.transformNews(news) : null;
+    return news ? await this.transformNews(news) : null;
   }
 
   async create(news: Partial<News>): Promise<News> {
     const newNews = this.newsRepository.create(news);
     const saved = await this.newsRepository.save(newNews);
-    return this.transformNews(saved);
+    return await this.transformNews(saved);
   }
 
   private extractKeyFromUrl(url: string): string | null {
@@ -73,7 +73,7 @@ export class NewsService {
     }
 
     await this.newsRepository.update(id, news);
-    return this.findOne(id);
+    return await this.findOne(id);
   }
 
   async remove(id: number): Promise<void> {

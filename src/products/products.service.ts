@@ -12,24 +12,25 @@ export class ProductsService {
     private storageService: StorageService,
   ) {}
 
-  private transformProduct(product: Product): Product {
+  private async transformProduct(product: Product): Promise<Product> {
     if (!product) return product;
     
     if (product.image) {
-      const url = this.storageService.getFileUrl(product.image);
+      const url = await this.storageService.getFileUrl(product.image);
       if (url) {
         product.image = url;
       }
     }
     
     if (product.images && product.images.length > 0) {
-      product.images = product.images
-        .map(img => this.storageService.getFileUrl(img))
-        .filter((url): url is string => url !== null);
+      const urls = await Promise.all(
+        product.images.map(img => this.storageService.getFileUrl(img))
+      );
+      product.images = urls.filter((url): url is string => url !== null);
     }
     
     if (product.video) {
-      const url = this.storageService.getFileUrl(product.video);
+      const url = await this.storageService.getFileUrl(product.video);
       if (url) {
         product.video = url;
       }
@@ -44,7 +45,7 @@ export class ProductsService {
       relations: ['category'],
       order: { createdAt: 'DESC' },
     });
-    return products.map(p => this.transformProduct(p));
+    return Promise.all(products.map(p => this.transformProduct(p)));
   }
 
   async findByCategory(categoryId: number): Promise<Product[]> {
@@ -53,7 +54,7 @@ export class ProductsService {
       relations: ['category'],
       order: { createdAt: 'DESC' },
     });
-    return products.map(p => this.transformProduct(p));
+    return Promise.all(products.map(p => this.transformProduct(p)));
   }
 
   async findOne(id: number): Promise<Product | null> {
@@ -61,13 +62,13 @@ export class ProductsService {
       where: { id },
       relations: ['category'],
     });
-    return product ? this.transformProduct(product) : null;
+    return product ? await this.transformProduct(product) : null;
   }
 
   async create(product: Partial<Product>): Promise<Product> {
     const newProduct = this.productsRepository.create(product);
     const saved = await this.productsRepository.save(newProduct);
-    return this.transformProduct(saved);
+    return await this.transformProduct(saved);
   }
 
   private extractKeyFromUrl(url: string): string | null {
@@ -136,7 +137,7 @@ export class ProductsService {
     }
 
     await this.productsRepository.update(id, product);
-    return this.findOne(id);
+    return await this.findOne(id);
   }
 
   async remove(id: number): Promise<void> {

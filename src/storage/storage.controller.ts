@@ -28,7 +28,7 @@ export class StorageController {
     }
 
     const key = await this.storageService.uploadFile(file, folder);
-    const url = this.storageService.getFileUrl(key) || '';
+    const url = await this.storageService.getFileUrl(key) || '';
 
     return {
       key,
@@ -48,13 +48,14 @@ export class StorageController {
     }
 
     const keys = await this.storageService.uploadFiles(files, folder);
-    const urls = keys
-      .map((key) => this.storageService.getFileUrl(key))
-      .filter((url): url is string => url !== null);
+    const urls = await Promise.all(
+      keys.map((key) => this.storageService.getFileUrl(key))
+    );
+    const validUrls = urls.filter((url): url is string => url !== null);
 
     return {
       keys,
-      urls,
+      urls: validUrls,
     };
   }
 }

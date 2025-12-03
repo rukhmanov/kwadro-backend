@@ -12,11 +12,11 @@ export class CategoriesService {
     private storageService: StorageService,
   ) {}
 
-  private transformCategory(category: Category): Category {
+  private async transformCategory(category: Category): Promise<Category> {
     if (!category) return category;
     
     if (category.image) {
-      const url = this.storageService.getFileUrl(category.image);
+      const url = await this.storageService.getFileUrl(category.image);
       if (url) {
         category.image = url;
       }
@@ -30,12 +30,12 @@ export class CategoriesService {
       relations: ['products'],
       order: { order: 'ASC' }
     });
-    return categories.map(c => this.transformCategory(c));
+    return Promise.all(categories.map(c => this.transformCategory(c)));
   }
 
   async findOne(id: number): Promise<Category | null> {
     const category = await this.categoriesRepository.findOne({ where: { id }, relations: ['products'] });
-    return category ? this.transformCategory(category) : null;
+    return category ? await this.transformCategory(category) : null;
   }
 
   async create(category: Partial<Category>): Promise<Category> {
@@ -49,7 +49,7 @@ export class CategoriesService {
     }
     const newCategory = this.categoriesRepository.create(category);
     const saved = await this.categoriesRepository.save(newCategory);
-    return this.transformCategory(saved);
+    return await this.transformCategory(saved);
   }
 
   private extractKeyFromUrl(url: string): string | null {
@@ -82,7 +82,7 @@ export class CategoriesService {
     }
 
     await this.categoriesRepository.update(id, category);
-    return this.findOne(id);
+    return await this.findOne(id);
   }
 
   async remove(id: number): Promise<void> {

@@ -87,20 +87,34 @@ export class StorageService {
   }
 
   /**
-   * Получает публичный URL файла из S3
+   * Получает подписанный URL файла из S3 (для доступа к приватным файлам)
    * @param key - ключ файла в S3
-   * @returns публичный URL файла
+   * @param expiresIn - время жизни URL в секундах (по умолчанию 7 дней)
+   * @returns подписанный URL файла
    */
-  getFileUrl(key: string): string | null {
+  async getFileUrl(key: string, expiresIn: number = 604800): Promise<string | null> {
     if (!key) return null;
     
-    // Если ключ уже является полным URL, возвращаем его
+    // Если ключ уже является полным URL (с параметрами подписи), возвращаем его
     if (key.startsWith('http://') || key.startsWith('https://')) {
-      return key;
+      // Проверяем, есть ли уже параметры подписи в URL
+      if (key.includes('X-Amz-Signature') || key.includes('X-Amz-Algorithm')) {
+        return key;
+      }
+      // Если это простой URL без подписи, извлекаем ключ и создаем подписанный
+      const parts = key.split('/');
+      const bucketIndex = parts.findIndex(part => part.includes('parsifal-files') || part.includes('twcstorage'));
+      if (bucketIndex >= 0 && bucketIndex < parts.length - 1) {
+        const extractedKey = parts.slice(bucketIndex + 1).join('/');
+        return await this.getSignedFileUrl(extractedKey, expiresIn);
+      }
+      // Fallback: берем последние части как ключ
+      const extractedKey = parts.slice(-2).join('/');
+      return await this.getSignedFileUrl(extractedKey, expiresIn);
     }
 
-    // Формируем публичный URL
-    return `${this.s3Url}/${this.bucketName}/${key}`;
+    // Генерируем подписанный URL для ключа
+    return await this.getSignedFileUrl(key, expiresIn);
   }
 
   /**

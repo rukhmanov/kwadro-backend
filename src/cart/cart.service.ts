@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CartItem } from '../entities/cart-item.entity';
 import { Product } from '../entities/product.entity';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class CartService {
@@ -11,13 +12,32 @@ export class CartService {
     private cartItemsRepository: Repository<CartItem>,
     @InjectRepository(Product)
     private productsRepository: Repository<Product>,
+    private storageService: StorageService,
   ) {}
 
+  private async transformProductImage(product: Product): Promise<void> {
+    if (product.image) {
+      const url = await this.storageService.getFileUrl(product.image);
+      if (url) {
+        product.image = url;
+      }
+    }
+  }
+
   async findAll(sessionId: string): Promise<CartItem[]> {
-    return this.cartItemsRepository.find({
+    const cartItems = await this.cartItemsRepository.find({
       where: { sessionId },
       relations: ['product'],
     });
+
+    // Преобразуем ключи изображений в подписанные URL
+    for (const item of cartItems) {
+      if (item.product) {
+        await this.transformProductImage(item.product);
+      }
+    }
+
+    return cartItems;
   }
 
   async addItem(sessionId: string, productId: number, quantity: number): Promise<CartItem> {
