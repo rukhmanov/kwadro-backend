@@ -247,6 +247,38 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     await this.sendMessageToGroup(groupId, text);
   }
 
+  /**
+   * Отправляет информацию о заказе в Telegram группу
+   * @param phone Телефон клиента
+   * @param items Массив товаров в заказе
+   * @param total Общая сумма заказа
+   */
+  async sendOrderToTelegram(phone: string, items: Array<{ name: string; quantity: number; price: number }>, total: number): Promise<void> {
+    const groupId = this.configService.get<string>('TELEGRAM_GROUP_ID') || 
+                    process.env.TELEGRAM_GROUP_ID || 
+                    '';
+
+    if (!groupId) {
+      this.logger.warn('TELEGRAM_GROUP_ID не установлен. Заказ не будет отправлен в Telegram.');
+      return;
+    }
+
+    let text = `<b>🛒 Новый заказ</b>\n\n`;
+    text += `<b>Телефон:</b> ${this.escapeHtml(phone)}\n\n`;
+    text += `<b>Товары:</b>\n`;
+    
+    items.forEach((item, index) => {
+      text += `${index + 1}. ${this.escapeHtml(item.name)}\n`;
+      text += `   Количество: ${item.quantity}\n`;
+      text += `   Цена: ${item.price} ₽\n`;
+      text += `   Сумма: ${item.quantity * item.price} ₽\n\n`;
+    });
+    
+    text += `<b>Итого: ${total} ₽</b>`;
+
+    await this.sendMessageToGroup(groupId, text);
+  }
+
   private escapeHtml(text: string): string {
     return text
       .replace(/&/g, '&amp;')

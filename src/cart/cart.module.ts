@@ -5,11 +5,13 @@ import { CartService } from './cart.service';
 import { CartItem } from '../entities/cart-item.entity';
 import { Product } from '../entities/product.entity';
 import { StorageModule } from '../storage/storage.module';
+import { TelegramModule } from '../telegram/telegram.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([CartItem, Product]),
     StorageModule,
+    TelegramModule,
   ],
   controllers: [CartController],
   providers: [CartService],

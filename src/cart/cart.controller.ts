@@ -29,6 +29,11 @@ export class CartController {
   clearCart(@Query('sessionId') sessionId: string) {
     return this.cartService.clearCart(sessionId);
   }
+
+  @Post('order')
+  placeOrder(@Body() body: { sessionId: string; phone: string }) {
+    return this.cartService.placeOrder(body.sessionId, body.phone);
+  }
 }
 
 
