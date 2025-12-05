@@ -6,7 +6,7 @@ export class ChatMessage {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column('varchar')
   username: string;
 
   @Column('text')
@@ -15,14 +15,14 @@ export class ChatMessage {
   @Column({ default: false })
   isAdmin: boolean;
 
-  @Column({ nullable: true })
+  @Column('varchar', { nullable: true })
   phone: string; // Номер телефона пользователя (если указан)
 
   @ManyToOne(() => ChatSession, session => session.messages, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'sessionId' })
   session: ChatSession;
 
-  @Column({ nullable: true })
+  @Column('int', { nullable: true })
   sessionId: number;
 
   @CreateDateColumn()

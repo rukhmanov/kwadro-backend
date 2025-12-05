@@ -6,10 +6,10 @@ export class ChatSession {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ unique: true })
+  @Column('varchar', { unique: true })
   sessionId: string; // Уникальный ID сессии (генерируется на фронтенде)
 
-  @Column({ nullable: true })
+  @Column('varchar', { nullable: true })
   phone: string; // Номер телефона пользователя
 
   @Column({ default: false })

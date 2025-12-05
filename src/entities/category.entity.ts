@@ -7,13 +7,13 @@ export class Category {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column('varchar')
   name: string;
 
-  @Column({ nullable: true })
+  @Column('text', { nullable: true })
   description: string;
 
-  @Column({ nullable: true })
+  @Column('varchar', { nullable: true })
   image: string;
 
   @Column({ type: 'int', default: 0 })

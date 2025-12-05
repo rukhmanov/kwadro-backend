@@ -24,18 +24,32 @@ export class ProductsService {
   private async transformProduct(product: Product): Promise<Product> {
     if (!product) return product;
     
-    if (product.image) {
-      const url = await this.storageService.getFileUrl(product.image);
-      if (url) {
-        product.image = url;
-      }
-    }
-    
+    // Обрабатываем изображения
     if (product.images && product.images.length > 0) {
+      // Если есть массив images, преобразуем их в URL
       const urls = await Promise.all(
         product.images.map(img => this.storageService.getFileUrl(img))
       );
       product.images = urls.filter((url): url is string => url !== null);
+      
+      // Для обратной совместимости устанавливаем первое изображение как image
+      if (product.images.length > 0) {
+        product.image = product.images[0];
+      }
+    } else if (product.image) {
+      // Если массив images пустой, но есть старое поле image, преобразуем его и добавляем в массив
+      const imageUrl = await this.storageService.getFileUrl(product.image);
+      if (imageUrl) {
+        product.image = imageUrl;
+        product.images = [imageUrl]; // Добавляем в массив для единообразия
+      } else {
+        // Если не удалось получить URL, очищаем поле
+        product.image = null;
+        product.images = [];
+      }
+    } else {
+      // Если нет ни images, ни image, убеждаемся что массив пустой
+      product.images = [];
     }
     
     if (product.video) {
@@ -136,14 +150,60 @@ export class ProductsService {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return url;
     }
-    // Извлекаем ключ из URL: https://s3.twcstorage.ru/bucket/folder/file.ext -> folder/file.ext
-    const parts = url.split('/');
-    const bucketIndex = parts.findIndex(part => part.includes('parsifal-files') || part.includes('twcstorage'));
-    if (bucketIndex >= 0 && bucketIndex < parts.length - 1) {
-      return parts.slice(bucketIndex + 1).join('/');
+    
+    try {
+      // Декодируем URL и убираем query string
+      const decodedUrl = decodeURIComponent(url);
+      const urlWithoutQuery = decodedUrl.split('?')[0].split('%3F')[0]; // Убираем ? и %3F (закодированный ?)
+      
+      // Извлекаем ключ из URL
+      // Формат: https://s3.twcstorage.ru/1f48199c-parsifal-files/1f48199c-parsifal-files/products/file.ext
+      // Нужно получить: products/file.ext
+      const parts = urlWithoutQuery.split('/');
+      
+      // Ищем индекс части с bucket name (parsifal-files или twcstorage)
+      const bucketIndex = parts.findIndex(part => 
+        part.includes('parsifal-files') || part.includes('twcstorage')
+      );
+      
+      if (bucketIndex >= 0) {
+        // Если нашли bucket, берем все после него
+        // Но нужно пропустить дублирующуюся часть bucket name
+        let startIndex = bucketIndex + 1;
+        // Если следующая часть тоже содержит bucket name, пропускаем её
+        if (parts[startIndex] && (parts[startIndex].includes('parsifal-files') || parts[startIndex].includes('twcstorage'))) {
+          startIndex++;
+        }
+        if (startIndex < parts.length) {
+          return parts.slice(startIndex).join('/');
+        }
+      }
+      
+      // Fallback: берем последние 2 части (обычно это folder/file.ext)
+      if (parts.length >= 2) {
+        return parts.slice(-2).join('/');
+      }
+      
+      return null;
+    } catch (e) {
+      // Если декодирование не удалось, пробуем без декодирования
+      const urlWithoutQuery = url.split('?')[0].split('%3F')[0];
+      const parts = urlWithoutQuery.split('/');
+      const bucketIndex = parts.findIndex(part => part.includes('parsifal-files') || part.includes('twcstorage'));
+      if (bucketIndex >= 0) {
+        let startIndex = bucketIndex + 1;
+        if (parts[startIndex] && (parts[startIndex].includes('parsifal-files') || parts[startIndex].includes('twcstorage'))) {
+          startIndex++;
+        }
+        if (startIndex < parts.length) {
+          return parts.slice(startIndex).join('/');
+        }
+      }
+      if (parts.length >= 2) {
+        return parts.slice(-2).join('/');
+      }
+      return null;
     }
-    // Fallback: берем последние 2 части
-    return parts.slice(-2).join('/');
   }
 
   async update(id: number, product: Partial<Product>): Promise<Product | null> {
@@ -151,45 +211,132 @@ export class ProductsService {
     const existingProduct = await this.productsRepository.findOne({ where: { id } });
     if (!existingProduct) return null;
 
-    // Удаляем старые изображения, если они были заменены
-    if (product.image && existingProduct.image) {
-      const newKey = this.extractKeyFromUrl(product.image);
-      const oldKey = this.extractKeyFromUrl(existingProduct.image);
-      if (newKey && oldKey && newKey !== oldKey) {
-        await this.storageService.deleteFile(oldKey);
-      }
-      // Сохраняем ключ, а не URL
-      if (newKey) {
-        product.image = newKey;
+    // Обрабатываем изображения (теперь все в массиве images)
+    // Важно: product.images уже содержит ключи существующих изображений + новые ключи из контроллера
+    if (product.images !== undefined) {
+      if (Array.isArray(product.images) && product.images.length > 0) {
+        // product.images уже содержит ключи (не URL), так как они приходят из контроллера
+        // где новые файлы загружены и их ключи добавлены к существующим ключам
+        // Но на всякий случай проверяем и нормализуем
+        const finalKeys = product.images
+          .map(img => {
+            if (!img) return null;
+            // Если это URL (не должно быть, но на всякий случай), извлекаем ключ
+            if (img.startsWith('http://') || img.startsWith('https://')) {
+              return this.extractKeyFromUrl(img);
+            }
+            // Это уже ключ, возвращаем как есть
+            return img;
+          })
+          .filter((key): key is string => key !== null && key !== undefined && key !== '');
+        
+        // Собираем все старые ключи (из массива images и из поля image)
+        const allOldKeys: string[] = [];
+        
+        if (existingProduct.images && existingProduct.images.length > 0) {
+          const oldKeysFromArray = existingProduct.images
+            .map(img => {
+              if (!img) return null;
+              // В БД хранятся ключи, но на всякий случай проверяем
+              if (img.startsWith('http://') || img.startsWith('https://')) {
+                return this.extractKeyFromUrl(img);
+              }
+              return img;
+            })
+            .filter((key): key is string => key !== null && key !== undefined);
+          allOldKeys.push(...oldKeysFromArray);
+        }
+        
+        // Если есть старое поле image, но его нет в массиве, добавляем его ключ
+        if (existingProduct.image) {
+          const oldImageKey = existingProduct.image.startsWith('http://') || existingProduct.image.startsWith('https://')
+            ? this.extractKeyFromUrl(existingProduct.image)
+            : existingProduct.image;
+          if (oldImageKey && !allOldKeys.some(k => k === oldImageKey)) {
+            allOldKeys.push(oldImageKey);
+          }
+        }
+        
+        // Нормализуем ключи для сравнения (убираем пробелы и приводим к нижнему регистру)
+        const normalizedFinalKeys = new Set(finalKeys.map(key => {
+          if (!key) return '';
+          return key.trim().toLowerCase();
+        }).filter(k => k !== ''));
+        
+        // Удаляем старые изображения, которых нет в новых
+        const keysToDelete = allOldKeys.filter(oldKey => {
+          if (!oldKey) return false;
+          const normalizedOldKey = oldKey.trim().toLowerCase();
+          return !normalizedFinalKeys.has(normalizedOldKey);
+        });
+        
+        if (keysToDelete.length > 0) {
+          await this.storageService.deleteFiles(keysToDelete);
+        }
+        
+        // Сохраняем ключи в правильном порядке (первое - главное)
+        // Порядок уже правильный: существующие в нужном порядке + новые в конце
+        product.images = finalKeys;
+        // Очищаем старое поле image, так как теперь все в массиве
+        product.image = null;
+      } else {
+        // Если передан пустой массив, удаляем все старые изображения
+        const allOldKeys: string[] = [];
+        
+        if (existingProduct.images && existingProduct.images.length > 0) {
+          const oldKeysFromArray = existingProduct.images
+            .map(img => {
+              if (img && (img.startsWith('http://') || img.startsWith('https://'))) {
+                return this.extractKeyFromUrl(img);
+              }
+              return img;
+            })
+            .filter((key): key is string => key !== null && key !== undefined);
+          allOldKeys.push(...oldKeysFromArray);
+        }
+        
+        if (existingProduct.image) {
+          const oldImageKey = existingProduct.image.startsWith('http://') || existingProduct.image.startsWith('https://')
+            ? this.extractKeyFromUrl(existingProduct.image)
+            : existingProduct.image;
+          if (oldImageKey) {
+            allOldKeys.push(oldImageKey);
+          }
+        }
+        
+        if (allOldKeys.length > 0) {
+          await this.storageService.deleteFiles(allOldKeys);
+        }
+        
+        product.images = [];
+        product.image = null;
       }
     }
 
-    if (product.images && existingProduct.images && existingProduct.images.length > 0) {
-      const newKeys = product.images
-        .map(img => this.extractKeyFromUrl(img))
-        .filter((key): key is string => key !== null);
-      const oldKeys = existingProduct.images
-        .map(img => this.extractKeyFromUrl(img))
-        .filter((key): key is string => key !== null && !newKeys.includes(key));
-      if (oldKeys.length > 0) {
-        await this.storageService.deleteFiles(oldKeys);
+    // Обрабатываем видео
+    if (product.video === null || product.video === undefined) {
+      // Если передано null, удаляем старое видео
+      if (existingProduct.video) {
+        const oldKey = this.extractKeyFromUrl(existingProduct.video);
+        if (oldKey) {
+          await this.storageService.deleteFile(oldKey);
+        }
+        product.video = null;
       }
-      // Сохраняем ключи, а не URL
-      product.images = newKeys;
-    } else if (product.images) {
-      // Если переданы новые изображения, преобразуем их в ключи
-      product.images = product.images
-        .map(img => this.extractKeyFromUrl(img))
-        .filter((key): key is string => key !== null);
-    }
-
-    // Удаляем старое видео, если оно было заменено
-    if (product.video && existingProduct.video) {
+    } else if (product.video && existingProduct.video) {
+      // Если передано новое видео и есть старое
       const newKey = this.extractKeyFromUrl(product.video);
       const oldKey = this.extractKeyFromUrl(existingProduct.video);
-      if (newKey && oldKey && newKey !== oldKey) {
+      // Сравниваем нормализованные ключи
+      if (newKey && oldKey && newKey.trim().toLowerCase() !== oldKey.trim().toLowerCase()) {
         await this.storageService.deleteFile(oldKey);
       }
+      if (newKey) {
+        product.video = newKey;
+      }
+    } else if (product.video) {
+      // Если передано новое видео, но старого не было
+      const newKey = this.extractKeyFromUrl(product.video);
       if (newKey) {
         product.video = newKey;
       }
@@ -256,28 +403,30 @@ export class ProductsService {
         }
 
         // Удаляем изображения из S3 (в БД хранятся ключи)
-        if (product.image) {
-          const imageKey = this.extractKeyFromUrl(product.image);
-          if (imageKey) {
-            try {
-              await this.storageService.deleteFile(imageKey);
-            } catch (error) {
-              console.error('Ошибка при удалении главного изображения:', error);
-              // Продолжаем удаление товара даже если файл не удалось удалить
-            }
-          }
-        }
+        const allImageKeys: string[] = [];
+        
+        // Собираем ключи из массива images
         if (product.images && product.images.length > 0) {
           const imageKeys = product.images
             .map(img => this.extractKeyFromUrl(img))
             .filter((key): key is string => key !== null);
-          if (imageKeys.length > 0) {
-            try {
-              await this.storageService.deleteFiles(imageKeys);
-            } catch (error) {
-              console.error('Ошибка при удалении дополнительных изображений:', error);
-              // Продолжаем удаление товара даже если файлы не удалось удалить
-            }
+          allImageKeys.push(...imageKeys);
+        }
+        
+        // Если есть старое поле image, добавляем его ключ
+        if (product.image) {
+          const imageKey = this.extractKeyFromUrl(product.image);
+          if (imageKey && !allImageKeys.includes(imageKey)) {
+            allImageKeys.push(imageKey);
+          }
+        }
+        
+        if (allImageKeys.length > 0) {
+          try {
+            await this.storageService.deleteFiles(allImageKeys);
+          } catch (error) {
+            console.error('Ошибка при удалении изображений:', error);
+            // Продолжаем удаление товара даже если файлы не удалось удалить
           }
         }
         // Удаляем видео из S3

@@ -7,7 +7,7 @@ export class Product {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column('varchar')
   name: string;
 
   @Column('text', { nullable: true })
@@ -19,16 +19,16 @@ export class Product {
   @Column('decimal', { precision: 10, scale: 2, nullable: true })
   oldPrice: number;
 
-  @Column({ nullable: true })
-  image: string;
+  @Column('varchar', { nullable: true })
+  image: string | null;
 
   @Column('simple-array', { nullable: true })
   images: string[];
 
-  @Column({ nullable: true })
-  video: string;
+  @Column('varchar', { nullable: true })
+  video: string | null;
 
-  @Column({ default: 0 })
+  @Column('int', { default: 0 })
   stock: number;
 
   @Column({ default: true })
@@ -38,7 +38,7 @@ export class Product {
   @JoinColumn({ name: 'categoryId' })
   category: Category;
 
-  @Column()
+  @Column('int')
   categoryId: number;
 
   @OneToMany(() => ProductSpecification, (spec) => spec.product, { cascade: true })

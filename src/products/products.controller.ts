@@ -67,16 +67,10 @@ export class ProductsController {
         }
       }
 
-      // Загружаем главное изображение, если оно есть
+      // Загружаем все изображения в массив images
       if (imageFiles.length > 0) {
-        const mainImage = await this.storageService.uploadFile(imageFiles[0], 'products');
-        product.image = mainImage;
-        
-        // Загружаем дополнительные изображения, если они есть
-        if (imageFiles.length > 1) {
-          const additionalImages = await this.storageService.uploadFiles(imageFiles.slice(1), 'products');
-          product.images = additionalImages;
-        }
+        const uploadedImages = await this.storageService.uploadFiles(imageFiles, 'products');
+        product.images = uploadedImages;
       }
 
       // Загружаем видео, если оно есть
@@ -125,12 +119,15 @@ export class ProductsController {
 
       // Загружаем новые изображения, если они есть
       if (imageFiles.length > 0) {
-        const mainImage = await this.storageService.uploadFile(imageFiles[0], 'products');
-        product.image = mainImage;
-        
-        if (imageFiles.length > 1) {
-          const additionalImages = await this.storageService.uploadFiles(imageFiles.slice(1), 'products');
-          product.images = additionalImages;
+        const newImageKeys = await this.storageService.uploadFiles(imageFiles, 'products');
+        // Новые изображения добавляются в конец существующих (сохраняем порядок)
+        // product.images уже содержит ключи существующих изображений в правильном порядке
+        if (product.images && Array.isArray(product.images) && product.images.length > 0) {
+          // Существующие изображения уже в правильном порядке из фронтенда (это ключи, не URL)
+          // Новые ключи добавляем в конец
+          product.images = [...product.images, ...newImageKeys];
+        } else {
+          product.images = newImageKeys;
         }
       }
 

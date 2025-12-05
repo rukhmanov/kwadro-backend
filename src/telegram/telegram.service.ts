@@ -31,6 +31,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private lastUpdateId = 0;
   private isRunning = false;
   private pollingInterval: NodeJS.Timeout | null = null;
+  private conflictErrorCount = 0;
+  private readonly MAX_CONFLICT_ERRORS = 3;
 
   constructor(private configService: ConfigService) {
     // Пробуем получить токен из ConfigService, если не получилось - из process.env
@@ -133,8 +135,34 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           this.logger.error('Неверный токен бота! Прослушивание остановлено.');
           this.isRunning = false;
           return;
+        } else if (response.error_code === 409) {
+          // Конфликт: другой экземпляр бота уже получает обновления
+          this.conflictErrorCount++;
+          
+          if (this.conflictErrorCount === 1) {
+            this.logger.warn('Обнаружен конфликт: другой экземпляр бота уже получает обновления. Прослушивание остановлено.');
+          }
+          
+          // Если конфликты повторяются, останавливаем опрос
+          if (this.conflictErrorCount >= this.MAX_CONFLICT_ERRORS) {
+            this.logger.warn('Множественные конфликты обнаружены. Прослушивание Telegram отключено. Убедитесь, что запущен только один экземпляр приложения.');
+            this.isRunning = false;
+            return;
+          }
+          
+          // Ждем дольше перед следующей попыткой при конфликте
+          if (this.isRunning) {
+            this.pollingInterval = setTimeout(() => this.getUpdates(), 10000); // 10 секунд вместо 1
+          }
+          return;
         }
+        
+        // Сбрасываем счетчик конфликтов при других ошибках
+        this.conflictErrorCount = 0;
         this.logger.error(`Ошибка API (код ${response.error_code}):`, response.description);
+      } else {
+        // Успешный ответ без обновлений - сбрасываем счетчик конфликтов
+        this.conflictErrorCount = 0;
       }
     } catch (error) {
       this.logger.error('Ошибка при получении обновлений:', error);

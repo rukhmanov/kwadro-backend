@@ -5,13 +5,13 @@ export class ContactRequest {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ nullable: true })
+  @Column('varchar', { nullable: true })
   name: string;
 
-  @Column({ nullable: true })
+  @Column('varchar', { nullable: true })
   email: string;
 
-  @Column({ nullable: true })
+  @Column('varchar', { nullable: true })
   phone: string;
 
   @Column({ type: 'text', nullable: true })

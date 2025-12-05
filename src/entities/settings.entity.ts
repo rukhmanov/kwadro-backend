@@ -5,7 +5,7 @@ export class Settings {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ unique: true })
+  @Column('varchar', { unique: true })
   key: string; // Например, 'background_image'
 
   @Column('text', { nullable: true })

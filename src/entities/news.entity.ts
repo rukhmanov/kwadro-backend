@@ -5,13 +5,13 @@ export class News {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column('varchar')
   title: string;
 
   @Column('text')
   content: string;
 
-  @Column({ nullable: true })
+  @Column('varchar', { nullable: true })
   image: string;
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
