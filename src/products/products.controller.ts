@@ -13,7 +13,38 @@ export class ProductsController {
   ) {}
 
   @Get()
-  findAll(@Query('categoryId') categoryId?: string): Promise<Product[]> {
+  async findAll(
+    @Query('categoryId') categoryId?: string,
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+    @Query('minPrice') minPrice?: string,
+    @Query('maxPrice') maxPrice?: string,
+    @Query('inStock') inStock?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ): Promise<Product[] | { products: Product[]; total: number; page: number; limit: number; totalPages: number }> {
+    const hasPaginationParams = page !== undefined || limit !== undefined;
+    const hasFilterParams = search !== undefined || sortBy !== undefined || sortOrder !== undefined || 
+                           minPrice !== undefined || maxPrice !== undefined || inStock !== undefined;
+
+    // Если есть параметры пагинации или фильтров, возвращаем объект с пагинацией
+    if (hasPaginationParams || hasFilterParams) {
+      const filters = {
+        categoryId: categoryId ? +categoryId : undefined,
+        search: search || undefined,
+        sortBy: sortBy || 'createdAt',
+        sortOrder: (sortOrder || 'DESC') as 'ASC' | 'DESC',
+        minPrice: minPrice ? +minPrice : undefined,
+        maxPrice: maxPrice ? +maxPrice : undefined,
+        inStock: inStock === 'true' ? true : inStock === 'false' ? false : undefined,
+        page: page ? +page : 1,
+        limit: limit ? +limit : 15,
+      };
+      return this.productsService.findAll(filters);
+    }
+
+    // Для обратной совместимости: если только categoryId, возвращаем массив
     if (categoryId) {
       return this.productsService.findByCategory(+categoryId);
     }

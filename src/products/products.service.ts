@@ -62,13 +62,102 @@ export class ProductsService {
     return product;
   }
 
-  async findAll(): Promise<Product[]> {
-    const products = await this.productsRepository.find({ 
-      where: { isActive: true },
-      relations: ['category', 'specifications'],
-      order: { createdAt: 'DESC' },
-    });
-    return Promise.all(products.map(p => this.transformProduct(p)));
+  async findAll(): Promise<Product[]>;
+  async findAll(filters: {
+    categoryId?: number;
+    search?: string;
+    sortBy?: string;
+    sortOrder?: 'ASC' | 'DESC';
+    minPrice?: number;
+    maxPrice?: number;
+    inStock?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<{ products: Product[]; total: number; page: number; limit: number; totalPages: number }>;
+  async findAll(filters?: {
+    categoryId?: number;
+    search?: string;
+    sortBy?: string;
+    sortOrder?: 'ASC' | 'DESC';
+    minPrice?: number;
+    maxPrice?: number;
+    inStock?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<Product[] | { products: Product[]; total: number; page: number; limit: number; totalPages: number }> {
+    // Если фильтры не переданы, возвращаем простой массив
+    if (!filters) {
+      const products = await this.productsRepository.find({ 
+        where: { isActive: true },
+        relations: ['category', 'specifications'],
+        order: { createdAt: 'DESC' },
+      });
+      return Promise.all(products.map(p => this.transformProduct(p)));
+    }
+    const queryBuilder = this.productsRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.specifications', 'specifications')
+      .where('product.isActive = :isActive', { isActive: true });
+
+    // Фильтр по категории
+    if (filters?.categoryId) {
+      queryBuilder.andWhere('product.categoryId = :categoryId', { categoryId: filters.categoryId });
+    }
+
+    // Поиск по названию и описанию
+    if (filters?.search) {
+      queryBuilder.andWhere(
+        '(product.name LIKE :search OR product.description LIKE :search)',
+        { search: `%${filters.search}%` }
+      );
+    }
+
+    // Фильтр по цене
+    if (filters?.minPrice !== undefined) {
+      queryBuilder.andWhere('product.price >= :minPrice', { minPrice: filters.minPrice });
+    }
+    if (filters?.maxPrice !== undefined) {
+      queryBuilder.andWhere('product.price <= :maxPrice', { maxPrice: filters.maxPrice });
+    }
+
+    // Фильтр по наличию
+    if (filters?.inStock !== undefined) {
+      if (filters.inStock) {
+        queryBuilder.andWhere('product.stock > 0');
+      } else {
+        queryBuilder.andWhere('product.stock = 0');
+      }
+    }
+
+    // Сортировка
+    const sortBy = filters?.sortBy || 'createdAt';
+    const sortOrder = filters?.sortOrder || 'DESC';
+    const validSortFields = ['name', 'price', 'createdAt', 'stock'];
+    const finalSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    queryBuilder.orderBy(`product.${finalSortBy}`, sortOrder);
+
+    // Подсчет общего количества
+    const total = await queryBuilder.getCount();
+
+    // Пагинация
+    const page = filters?.page || 1;
+    const limit = filters?.limit || 15;
+    const skip = (page - 1) * limit;
+    queryBuilder.skip(skip).take(limit);
+
+    const products = await queryBuilder.getMany();
+    const transformedProducts = await Promise.all(products.map(p => this.transformProduct(p)));
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      products: transformedProducts,
+      total,
+      page,
+      limit,
+      totalPages,
+    };
   }
 
   async findByCategory(categoryId: number): Promise<Product[]> {
