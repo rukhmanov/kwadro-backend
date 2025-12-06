@@ -107,10 +107,10 @@ export class ProductsService {
       queryBuilder.andWhere('product.categoryId = :categoryId', { categoryId: filters.categoryId });
     }
 
-    // Поиск по названию и описанию
+    // Поиск по названию и описанию (регистронезависимый)
     if (filters?.search) {
       queryBuilder.andWhere(
-        '(product.name LIKE :search OR product.description LIKE :search)',
+        '(product.name ILIKE :search OR product.description ILIKE :search)',
         { search: `%${filters.search}%` }
       );
     }
