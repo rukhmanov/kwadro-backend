@@ -75,8 +75,16 @@ export class CartService {
       where: { sessionId, productId },
     });
 
+    const currentQuantity = cartItem ? cartItem.quantity : 0;
+    const newQuantity = currentQuantity + quantity;
+
+    // Проверяем, не превышает ли новое количество stock товара
+    if (newQuantity > product.stock) {
+      throw new Error(`Недостаточно товара на складе. Доступно: ${product.stock} шт.`);
+    }
+
     if (cartItem) {
-      cartItem.quantity += quantity;
+      cartItem.quantity = newQuantity;
       return this.cartItemsRepository.save(cartItem);
     } else {
       const newCartItem = this.cartItemsRepository.create({
@@ -89,10 +97,19 @@ export class CartService {
   }
 
   async updateQuantity(id: number, quantity: number): Promise<CartItem> {
-    const cartItem = await this.cartItemsRepository.findOne({ where: { id } });
+    const cartItem = await this.cartItemsRepository.findOne({ 
+      where: { id },
+      relations: ['product']
+    });
     if (!cartItem) {
       throw new Error('Элемент корзины не найден');
     }
+
+    // Проверяем, не превышает ли новое количество stock товара
+    if (quantity > cartItem.product.stock) {
+      throw new Error(`Недостаточно товара на складе. Доступно: ${cartItem.product.stock} шт.`);
+    }
+
     cartItem.quantity = quantity;
     return this.cartItemsRepository.save(cartItem);
   }
