@@ -1,5 +1,6 @@
-import { Controller, Post, Body, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Body, UnauthorizedException, UseGuards, Request } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -12,6 +13,14 @@ export class AuthController {
       throw new UnauthorizedException('Неверные учетные данные');
     }
     return this.authService.login(user);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  async changePassword(@Request() req: any, @Body() changePasswordDto: { oldPassword: string; newPassword: string }) {
+    const userId = req.user.userId;
+    await this.authService.changePassword(userId, changePasswordDto.oldPassword, changePasswordDto.newPassword);
+    return { message: 'Пароль успешно изменен' };
   }
 }
 

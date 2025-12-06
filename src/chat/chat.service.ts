@@ -90,10 +90,13 @@ export class ChatService {
   }
 
   async getAllSessions(): Promise<ChatSession[]> {
-    return this.chatSessionsRepository.find({
+    const sessions = await this.chatSessionsRepository.find({
       relations: ['messages'],
       order: { updatedAt: 'DESC' },
     });
+    
+    // Фильтруем сессии, оставляя только те, у которых есть хотя бы одно сообщение
+    return sessions.filter(session => session.messages && session.messages.length > 0);
   }
 
   async getSessionById(sessionId: string): Promise<ChatSession | null> {

@@ -40,15 +40,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Присоединяем клиента к комнате сессии
     client.join(`session:${sessionId}`);
     
-    // Получаем или создаем сессию для получения номера чата
-    const session = await this.chatService.getOrCreateSession(sessionId);
+    // Получаем существующую сессию (не создаем новую, если её нет)
+    const session = await this.chatService.getSessionById(sessionId);
     
-    // Загружаем сообщения сессии
-    const messages = await this.chatService.getSessionMessages(sessionId);
+    // Загружаем сообщения сессии (если сессия существует)
+    const messages = session ? await this.chatService.getSessionMessages(sessionId) : [];
     client.emit('messages', messages);
     
-    // Отправляем номер чата клиенту
-    client.emit('chat-number', { chatNumber: session.id });
+    // Отправляем номер чата клиенту только если сессия существует
+    if (session) {
+      client.emit('chat-number', { chatNumber: session.id });
+    }
   }
 
   @SubscribeMessage('message')
@@ -68,11 +70,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.clientSessions.set(client.id, sessionId);
     client.join(`session:${sessionId}`);
 
-    // Получаем сессию для получения номера чата
-    const session = await this.chatService.getOrCreateSession(sessionId);
-    const chatNumber = session.id;
-
-    // Создаем сообщение
+    // Создаем сообщение (сессия будет создана автоматически при создании первого сообщения)
     const chatMessage = await this.chatService.createMessage(sessionId, {
       username,
       message,
@@ -80,11 +78,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       phone,
     });
 
+    // Получаем сессию после создания сообщения для получения номера чата
+    const session = await this.chatService.getSessionById(sessionId);
+    
     // Отправляем сообщение всем в этой сессии
     this.server.to(`session:${sessionId}`).emit('message', chatMessage);
 
     // Если это сообщение от пользователя (не админа), отправляем автоматический ответ
-    if (!isAdmin) {
+    if (!isAdmin && session) {
+      // Вычисляем номер чата так же, как в админ панели (обратный порядок)
+      const allSessions = await this.chatService.getAllSessions();
+      const sessionIndex = allSessions.findIndex(s => s.id === session.id || s.sessionId === sessionId);
+      const chatNumber = sessionIndex !== -1 ? allSessions.length - sessionIndex : session.id;
+      
       // Отправляем сообщение в Telegram группу с номером чата
       this.telegramService.sendChatMessageToTelegram(username, message, chatNumber, phone).catch((error) => {
         console.error('Ошибка при отправке сообщения в Telegram:', error);
@@ -97,22 +103,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         message: chatMessage,
       });
 
-      // Автоматический ответ с задержкой
-      setTimeout(async () => {
-        const autoResponse = await this.chatService.createMessage(sessionId, {
-          username: 'Менеджер',
-          message: 'Оставьте, пожалуйста, номер телефона, на случай, если вы уйдете с сайта. Менеджер в ближайшее время подключится',
-          isAdmin: true,
-        });
+      // Проверяем, является ли это первым сообщением пользователя в сессии
+      const existingMessages = await this.chatService.getSessionMessages(sessionId);
+      const userMessages = existingMessages.filter(msg => !msg.isAdmin);
+      
+      // Отправляем автоматический ответ только если это первое сообщение пользователя
+      if (userMessages.length === 1) {
+        // Автоматический ответ с задержкой
+        setTimeout(async () => {
+          const autoResponse = await this.chatService.createMessage(sessionId, {
+            username: 'Менеджер',
+            message: 'Оставьте, пожалуйста, номер телефона, на случай, если вы уйдете с сайта. Менеджер в ближайшее время подключится',
+            isAdmin: true,
+          });
 
-        this.server.to(`session:${sessionId}`).emit('message', autoResponse);
-        const session = await this.chatService.getSessionById(sessionId);
-        this.server.emit('new-chat-session', {
-          sessionId,
-          session,
-          message: autoResponse,
-        });
-      }, 3000); // 3 секунды задержки
+          this.server.to(`session:${sessionId}`).emit('message', autoResponse);
+          const session = await this.chatService.getSessionById(sessionId);
+          this.server.emit('new-chat-session', {
+            sessionId,
+            session,
+            message: autoResponse,
+          });
+        }, 3000); // 3 секунды задержки
+      }
     }
   }
 

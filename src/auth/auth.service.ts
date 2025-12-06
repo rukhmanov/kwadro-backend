@@ -42,5 +42,25 @@ export class AuthService {
     const newUser = this.usersRepository.create(user);
     return this.usersRepository.save(newUser);
   }
+
+  async changePassword(userId: number, oldPassword: string, newPassword: string): Promise<void> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('Пользователь не найден');
+    }
+
+    // Проверяем старый пароль
+    const isOldPasswordValid = await bcrypt.compare(oldPassword, user.password);
+    if (!isOldPasswordValid) {
+      throw new UnauthorizedException('Неверный текущий пароль');
+    }
+
+    // Хешируем новый пароль
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    
+    // Обновляем пароль
+    user.password = hashedNewPassword;
+    await this.usersRepository.save(user);
+  }
 }
 
