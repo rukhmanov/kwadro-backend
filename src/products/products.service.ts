@@ -71,6 +71,7 @@ export class ProductsService {
     minPrice?: number;
     maxPrice?: number;
     inStock?: boolean;
+    isFeatured?: boolean;
     page?: number;
     limit?: number;
   }): Promise<{ products: Product[]; total: number; page: number; limit: number; totalPages: number }>;
@@ -82,6 +83,7 @@ export class ProductsService {
     minPrice?: number;
     maxPrice?: number;
     inStock?: boolean;
+    isFeatured?: boolean;
     page?: number;
     limit?: number;
   }): Promise<Product[] | { products: Product[]; total: number; page: number; limit: number; totalPages: number }> {
@@ -128,6 +130,11 @@ export class ProductsService {
       } else {
         queryBuilder.andWhere('product.stock = 0');
       }
+    }
+
+    // Фильтр по популярности
+    if (filters?.isFeatured !== undefined) {
+      queryBuilder.andWhere('product.isFeatured = :isFeatured', { isFeatured: filters.isFeatured });
     }
 
     // Сортировка

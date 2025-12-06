@@ -18,11 +18,34 @@ export class CartService {
   ) {}
 
   private async transformProductImage(product: Product): Promise<void> {
-    if (product.image) {
-      const url = await this.storageService.getFileUrl(product.image);
-      if (url) {
-        product.image = url;
+    if (!product) return;
+    
+    // Обрабатываем изображения
+    if (product.images && product.images.length > 0) {
+      // Если есть массив images, преобразуем их в URL
+      const urls = await Promise.all(
+        product.images.map(img => this.storageService.getFileUrl(img))
+      );
+      product.images = urls.filter((url): url is string => url !== null);
+      
+      // Для обратной совместимости устанавливаем первое изображение как image
+      if (product.images.length > 0) {
+        product.image = product.images[0];
       }
+    } else if (product.image) {
+      // Если массив images пустой, но есть старое поле image, преобразуем его и добавляем в массив
+      const imageUrl = await this.storageService.getFileUrl(product.image);
+      if (imageUrl) {
+        product.image = imageUrl;
+        product.images = [imageUrl]; // Добавляем в массив для единообразия
+      } else {
+        // Если не удалось получить URL, очищаем поле
+        product.image = null;
+        product.images = [];
+      }
+    } else {
+      // Если нет ни images, ни image, убеждаемся что массив пустой
+      product.images = [];
     }
   }
 

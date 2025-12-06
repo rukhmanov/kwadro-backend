@@ -21,12 +21,13 @@ export class ProductsController {
     @Query('minPrice') minPrice?: string,
     @Query('maxPrice') maxPrice?: string,
     @Query('inStock') inStock?: string,
+    @Query('isFeatured') isFeatured?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ): Promise<Product[] | { products: Product[]; total: number; page: number; limit: number; totalPages: number }> {
     const hasPaginationParams = page !== undefined || limit !== undefined;
     const hasFilterParams = search !== undefined || sortBy !== undefined || sortOrder !== undefined || 
-                           minPrice !== undefined || maxPrice !== undefined || inStock !== undefined;
+                           minPrice !== undefined || maxPrice !== undefined || inStock !== undefined || isFeatured !== undefined;
 
     // Если есть параметры пагинации или фильтров, возвращаем объект с пагинацией
     if (hasPaginationParams || hasFilterParams) {
@@ -38,6 +39,7 @@ export class ProductsController {
         minPrice: minPrice ? +minPrice : undefined,
         maxPrice: maxPrice ? +maxPrice : undefined,
         inStock: inStock === 'true' ? true : inStock === 'false' ? false : undefined,
+        isFeatured: isFeatured === 'true' ? true : isFeatured === 'false' ? false : undefined,
         page: page ? +page : 1,
         limit: limit ? +limit : 15,
       };

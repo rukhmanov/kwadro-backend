@@ -34,6 +34,9 @@ export class Product {
   @Column({ default: true })
   isActive: boolean;
 
+  @Column({ default: false })
+  isFeatured: boolean;
+
   @ManyToOne(() => Category, (category) => category.products)
   @JoinColumn({ name: 'categoryId' })
   category: Category;
