@@ -9,6 +9,7 @@ import { StorageModule } from '../storage/storage.module';
   imports: [TypeOrmModule.forFeature([News]), StorageModule],
   controllers: [NewsController],
   providers: [NewsService],
+  exports: [NewsService],
 })
 export class NewsModule {}
 

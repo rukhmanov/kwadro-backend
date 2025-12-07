@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as https from 'https';
+import { TelegramParserService } from './telegram-parser.service';
 
 interface TelegramUpdate {
   update_id: number;
@@ -33,8 +34,12 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private pollingInterval: NodeJS.Timeout | null = null;
   private conflictErrorCount = 0;
   private readonly MAX_CONFLICT_ERRORS = 3;
+  private readonly TARGET_CHANNEL_ID = '-1002472246522'; // ID канала для парсинга товаров и новостей
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private parserService: TelegramParserService,
+  ) {
     // Пробуем получить токен из ConfigService, если не получилось - из process.env
     this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN') || 
                     process.env.TELEGRAM_BOT_TOKEN || 
@@ -113,6 +118,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           if (update.message) {
             const msg = update.message;
             const chatType = msg.chat.type;
+            const chatId = String(msg.chat.id);
             const chatName = msg.chat.title || msg.chat.username || `Chat ${msg.chat.id}`;
             const userName = msg.from
               ? `${msg.from.first_name || ''} ${msg.from.last_name || ''}`.trim() || 
@@ -121,7 +127,21 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
               : 'Unknown';
             const text = msg.text || '[не текстовое сообщение]';
 
-            // Выводим только сообщения из групп и супергрупп
+            // Обрабатываем сообщения из целевого канала
+            if (chatId === this.TARGET_CHANNEL_ID && text && text !== '[не текстовое сообщение]') {
+              this.logger.log(`📨 Получено сообщение из канала ${chatName} (ID: ${chatId})`);
+              this.logger.debug(`Текст сообщения: ${text.substring(0, 100)}...`);
+              
+              // Пытаемся создать товар
+              const productCreated = await this.parserService.parseAndCreateProduct(text);
+              
+              // Если товар не создан, пытаемся создать новость
+              if (!productCreated) {
+                await this.parserService.parseAndCreateNews(text);
+              }
+            }
+
+            // Выводим только сообщения из групп и супергрупп (для логирования)
             if (chatType === 'group' || chatType === 'supergroup') {
               const timestamp = new Date(msg.date * 1000).toLocaleString('ru-RU');
               this.logger.log(`\n[${timestamp}] ${chatName} (${chatType})`);
