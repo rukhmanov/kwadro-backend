@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import * as https from 'https';
 import * as http from 'http';
+import { Readable } from 'stream';
 import { TelegramParserService } from './telegram-parser.service';
 import { StorageService } from '../storage/storage.service';
 
@@ -148,7 +149,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
               
               // Скачиваем фото, если оно есть
               let photoKey: string | null = null;
-              if (hasPhoto) {
+              if (hasPhoto && msg.photo) {
                 try {
                   photoKey = await this.downloadPhoto(msg.photo);
                   this.logger.log(`📷 Фото загружено: ${photoKey}`);
@@ -439,6 +440,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       destination: '',
       filename: fileName,
       path: '',
+      stream: Readable.from(buffer),
     };
 
     // Используем StorageService для загрузки
