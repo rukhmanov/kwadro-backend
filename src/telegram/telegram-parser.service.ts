@@ -33,9 +33,10 @@ export class TelegramParserService {
   /**
    * Парсит сообщение и создает товар, если оно соответствует шаблону
    * @param messageText Текст сообщения из Telegram
+   * @param photoKey Ключ фото в хранилище (опционально)
    * @returns true если товар был создан, false если сообщение не подходит под шаблон
    */
-  async parseAndCreateProduct(messageText: string): Promise<boolean> {
+  async parseAndCreateProduct(messageText: string, photoKey?: string | null): Promise<boolean> {
     // Проверяем, начинается ли сообщение с "Новый товар!"
     if (!messageText.trim().startsWith('Новый товар!')) {
       return false;
@@ -70,6 +71,12 @@ export class TelegramParserService {
         productData.specifications = product.specifications;
       }
 
+      // Добавляем фото, если оно есть
+      if (photoKey) {
+        productData.image = photoKey;
+        productData.images = [photoKey];
+      }
+
       await this.productsService.create(productData as any);
       this.logger.log(`✅ Товар "${product.name}" успешно создан из Telegram сообщения`);
       return true;
@@ -82,9 +89,10 @@ export class TelegramParserService {
   /**
    * Парсит сообщение и создает новость, если оно соответствует шаблону
    * @param messageText Текст сообщения из Telegram
+   * @param photoKey Ключ фото в хранилище (опционально)
    * @returns true если новость была создана, false если сообщение не подходит под шаблон
    */
-  async parseAndCreateNews(messageText: string): Promise<boolean> {
+  async parseAndCreateNews(messageText: string, photoKey?: string | null): Promise<boolean> {
     // Проверяем, начинается ли сообщение с "Новость!"
     if (!messageText.trim().startsWith('Новость!')) {
       return false;
@@ -97,7 +105,17 @@ export class TelegramParserService {
         return false;
       }
 
-      await this.newsService.create(news);
+      const newsData: any = {
+        title: news.title,
+        content: news.content,
+      };
+
+      // Добавляем фото, если оно есть
+      if (photoKey) {
+        newsData.image = photoKey;
+      }
+
+      await this.newsService.create(newsData);
       this.logger.log(`✅ Новость "${news.title}" успешно создана из Telegram сообщения`);
       return true;
     } catch (error) {

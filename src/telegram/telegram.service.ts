@@ -1,7 +1,17 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as https from 'https';
+import * as http from 'http';
 import { TelegramParserService } from './telegram-parser.service';
+import { StorageService } from '../storage/storage.service';
+
+interface TelegramPhoto {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
 
 interface TelegramUpdate {
   update_id: number;
@@ -21,6 +31,8 @@ interface TelegramUpdate {
     };
     date: number;
     text?: string;
+    photo?: TelegramPhoto[];
+    caption?: string;
   };
 }
 
@@ -39,6 +51,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private configService: ConfigService,
     private parserService: TelegramParserService,
+    private storageService: StorageService,
   ) {
     // Пробуем получить токен из ConfigService, если не получилось - из process.env
     this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN') || 
@@ -125,19 +138,31 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
                 msg.from.username || 
                 `User ${msg.from.id}`
               : 'Unknown';
-            const text = msg.text || '[не текстовое сообщение]';
+            const text = msg.text || msg.caption || '';
+            const hasPhoto = msg.photo && msg.photo.length > 0;
 
-            // Обрабатываем сообщения из целевого канала
-            if (chatId === this.TARGET_CHANNEL_ID && text && text !== '[не текстовое сообщение]') {
+            // Обрабатываем сообщения из целевого канала (должен быть текст или caption)
+            if (chatId === this.TARGET_CHANNEL_ID && text && text.trim().length > 0) {
               this.logger.log(`📨 Получено сообщение из канала ${chatName} (ID: ${chatId})`);
               this.logger.debug(`Текст сообщения: ${text.substring(0, 100)}...`);
               
+              // Скачиваем фото, если оно есть
+              let photoKey: string | null = null;
+              if (hasPhoto) {
+                try {
+                  photoKey = await this.downloadPhoto(msg.photo);
+                  this.logger.log(`📷 Фото загружено: ${photoKey}`);
+                } catch (error) {
+                  this.logger.error('Ошибка при загрузке фото:', error);
+                }
+              }
+              
               // Пытаемся создать товар
-              const productCreated = await this.parserService.parseAndCreateProduct(text);
+              const productCreated = await this.parserService.parseAndCreateProduct(text, photoKey);
               
               // Если товар не создан, пытаемся создать новость
               if (!productCreated) {
-                await this.parserService.parseAndCreateNews(text);
+                await this.parserService.parseAndCreateNews(text, photoKey);
               }
             }
 
@@ -325,6 +350,99 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     text += `<b>Итого: ${total} ₽</b>`;
 
     await this.sendMessageToGroup(groupId, text);
+  }
+
+  /**
+   * Скачивает фото из Telegram и загружает в хранилище
+   * @param photos Массив фото из сообщения Telegram
+   * @returns Ключ файла в хранилище или null при ошибке
+   */
+  private async downloadPhoto(photos: TelegramPhoto[]): Promise<string | null> {
+    if (!photos || photos.length === 0) {
+      return null;
+    }
+
+    try {
+      // Берем самое большое фото (последнее в массиве)
+      const largestPhoto = photos[photos.length - 1];
+      const fileId = largestPhoto.file_id;
+
+      // Получаем информацию о файле
+      const fileInfoUrl = `${this.apiUrl}/getFile?file_id=${fileId}`;
+      const fileInfo = await this.makeRequest(fileInfoUrl);
+
+      if (!fileInfo.ok || !fileInfo.result) {
+        this.logger.error('Не удалось получить информацию о файле');
+        return null;
+      }
+
+      const filePath = fileInfo.result.file_path;
+      const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${filePath}`;
+
+      // Скачиваем файл
+      const fileBuffer = await this.downloadFile(fileUrl);
+
+      // Определяем тип файла и папку
+      const extension = filePath.split('.').pop() || 'jpg';
+      const folder = 'products'; // Можно сделать динамическим
+
+      // Загружаем в хранилище через StorageService
+      // Нужно импортировать StorageService
+      return await this.uploadPhotoToStorage(fileBuffer, extension, folder);
+    } catch (error) {
+      this.logger.error('Ошибка при скачивании фото:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Скачивает файл по URL
+   */
+  private downloadFile(url: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      https.get(url, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Failed to download file: ${res.statusCode}`));
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        });
+
+        res.on('end', () => {
+          resolve(Buffer.concat(chunks));
+        });
+      }).on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Загружает фото в хранилище
+   */
+  private async uploadPhotoToStorage(buffer: Buffer, extension: string, folder: string): Promise<string> {
+    const timestamp = Date.now();
+    const randomString = Math.random().toString(36).substring(2, 15);
+    const fileName = `${folder}/${timestamp}-${randomString}.${extension}`;
+
+    // Создаем объект файла в формате Express.Multer.File
+    const file: Express.Multer.File = {
+      fieldname: 'photo',
+      originalname: `photo.${extension}`,
+      encoding: '7bit',
+      mimetype: `image/${extension === 'jpg' ? 'jpeg' : extension}`,
+      buffer: buffer,
+      size: buffer.length,
+      destination: '',
+      filename: fileName,
+      path: '',
+    };
+
+    // Используем StorageService для загрузки
+    return await this.storageService.uploadFile(file, folder);
   }
 
   private escapeHtml(text: string): string {
