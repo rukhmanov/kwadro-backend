@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, ManyToMany, JoinTable, OneToMany } from 'typeorm';
 import { Category } from './category.entity';
 import { ProductSpecification } from './product-specification.entity';
 
@@ -37,12 +37,13 @@ export class Product {
   @Column({ default: false })
   isFeatured: boolean;
 
-  @ManyToOne(() => Category, (category) => category.products)
-  @JoinColumn({ name: 'categoryId' })
-  category: Category;
-
-  @Column('int')
-  categoryId: number;
+  @ManyToMany(() => Category, (category) => category.products)
+  @JoinTable({
+    name: 'product_categories',
+    joinColumn: { name: 'productId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'categoryId', referencedColumnName: 'id' }
+  })
+  categories: Category[];
 
   @OneToMany(() => ProductSpecification, (spec) => spec.product, { cascade: true })
   specifications: ProductSpecification[];

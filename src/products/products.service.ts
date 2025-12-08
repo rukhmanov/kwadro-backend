@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Product } from '../entities/product.entity';
+import { Category } from '../entities/category.entity';
 import { CartItem } from '../entities/cart-item.entity';
 import { ProductSpecification } from '../entities/product-specification.entity';
 import { CategorySpecification } from '../entities/category-specification.entity';
@@ -12,6 +13,8 @@ export class ProductsService {
   constructor(
     @InjectRepository(Product)
     private productsRepository: Repository<Product>,
+    @InjectRepository(Category)
+    private categoriesRepository: Repository<Category>,
     @InjectRepository(CartItem)
     private cartItemsRepository: Repository<CartItem>,
     @InjectRepository(ProductSpecification)
@@ -91,20 +94,20 @@ export class ProductsService {
     if (!filters) {
       const products = await this.productsRepository.find({ 
         where: { isActive: true },
-        relations: ['category', 'specifications'],
+        relations: ['categories', 'specifications'],
         order: { createdAt: 'DESC' },
       });
       return Promise.all(products.map(p => this.transformProduct(p)));
     }
     const queryBuilder = this.productsRepository
       .createQueryBuilder('product')
-      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.categories', 'categories')
       .leftJoinAndSelect('product.specifications', 'specifications')
       .where('product.isActive = :isActive', { isActive: true });
 
     // Фильтр по категории
     if (filters?.categoryId) {
-      queryBuilder.andWhere('product.categoryId = :categoryId', { categoryId: filters.categoryId });
+      queryBuilder.andWhere('categories.id = :categoryId', { categoryId: filters.categoryId });
     }
 
     // Поиск по названию и описанию (регистронезависимый)
@@ -168,18 +171,21 @@ export class ProductsService {
   }
 
   async findByCategory(categoryId: number): Promise<Product[]> {
-    const products = await this.productsRepository.find({ 
-      where: { categoryId, isActive: true },
-      relations: ['category', 'specifications'],
-      order: { createdAt: 'DESC' },
-    });
+    const products = await this.productsRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.categories', 'categories')
+      .leftJoinAndSelect('product.specifications', 'specifications')
+      .where('product.isActive = :isActive', { isActive: true })
+      .andWhere('categories.id = :categoryId', { categoryId })
+      .orderBy('product.createdAt', 'DESC')
+      .getMany();
     return Promise.all(products.map(p => this.transformProduct(p)));
   }
 
   async findOne(id: number): Promise<Product | null> {
     const product = await this.productsRepository.findOne({ 
       where: { id },
-      relations: ['category', 'specifications'],
+      relations: ['categories', 'specifications'],
     });
     return product ? await this.transformProduct(product) : null;
   }
@@ -193,9 +199,18 @@ export class ProductsService {
     return [...new Set(specs.map(s => s.name))];
   }
 
-  async create(product: Partial<Product>): Promise<Product> {
-    const { specifications, ...productData } = product;
+  async create(product: Partial<Product> & { categoryIds?: number[] }): Promise<Product> {
+    const { specifications, categoryIds, ...productData } = product;
     const newProduct = this.productsRepository.create(productData);
+    
+    // Загружаем категории если указаны
+    if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
+      const categories = await this.categoriesRepository.find({
+        where: { id: In(categoryIds) }
+      });
+      newProduct.categories = categories;
+    }
+    
     const saved = await this.productsRepository.save(newProduct);
 
     // Сохраняем характеристики товара
@@ -210,25 +225,27 @@ export class ProductsService {
       });
       await this.productSpecsRepository.save(specsToSave);
 
-      // Сохраняем названия характеристик для категории (если их еще нет)
-      if (saved.categoryId) {
-        const existingCategorySpecs = await this.categorySpecsRepository.find({
-          where: { categoryId: saved.categoryId },
-        });
-        const existingNames = new Set(existingCategorySpecs.map(s => s.name));
-
-        const newCategorySpecs = specifications
-          .map((spec: { name: string; value: string }) => spec.name)
-          .filter((name: string) => !existingNames.has(name))
-          .map((name: string) => {
-            return this.categorySpecsRepository.create({
-              categoryId: saved.categoryId,
-              name: name,
-            });
+      // Сохраняем названия характеристик для всех категорий товара (если их еще нет)
+      if (saved.categories && saved.categories.length > 0) {
+        for (const category of saved.categories) {
+          const existingCategorySpecs = await this.categorySpecsRepository.find({
+            where: { categoryId: category.id },
           });
+          const existingNames = new Set(existingCategorySpecs.map(s => s.name));
 
-        if (newCategorySpecs.length > 0) {
-          await this.categorySpecsRepository.save(newCategorySpecs);
+          const newCategorySpecs = specifications
+            .map((spec: { name: string; value: string }) => spec.name)
+            .filter((name: string) => !existingNames.has(name))
+            .map((name: string) => {
+              return this.categorySpecsRepository.create({
+                categoryId: category.id,
+                name: name,
+              });
+            });
+
+          if (newCategorySpecs.length > 0) {
+            await this.categorySpecsRepository.save(newCategorySpecs);
+          }
         }
       }
     }
@@ -302,9 +319,12 @@ export class ProductsService {
     }
   }
 
-  async update(id: number, product: Partial<Product>): Promise<Product | null> {
+  async update(id: number, product: Partial<Product> & { categoryIds?: number[] }): Promise<Product | null> {
     // Получаем существующий продукт напрямую из БД (без преобразования URL)
-    const existingProduct = await this.productsRepository.findOne({ where: { id } });
+    const existingProduct = await this.productsRepository.findOne({ 
+      where: { id },
+      relations: ['categories']
+    });
     if (!existingProduct) return null;
 
     // Обрабатываем изображения (теперь все в массиве images)
@@ -438,7 +458,21 @@ export class ProductsService {
       }
     }
 
-    const { specifications, ...productData } = product;
+    const { specifications, categoryIds, ...productData } = product;
+    
+    // Обновляем категории если указаны
+    if (categoryIds !== undefined) {
+      if (Array.isArray(categoryIds) && categoryIds.length > 0) {
+        const categories = await this.categoriesRepository.find({
+          where: { id: In(categoryIds) }
+        });
+        existingProduct.categories = categories;
+      } else {
+        existingProduct.categories = [];
+      }
+    }
+    
+    await this.productsRepository.save(existingProduct);
     await this.productsRepository.update(id, productData);
 
     // Обновляем характеристики товара
@@ -457,26 +491,32 @@ export class ProductsService {
         });
         await this.productSpecsRepository.save(specsToSave);
 
-        // Обновляем список характеристик категории
-        const categoryId = productData.categoryId || existingProduct.categoryId;
-        if (categoryId) {
-          const existingCategorySpecs = await this.categorySpecsRepository.find({
-            where: { categoryId },
-          });
-          const existingNames = new Set(existingCategorySpecs.map(s => s.name));
-
-          const newCategorySpecs = specifications
-            .map((spec: { name: string; value: string }) => spec.name)
-            .filter((name: string) => !existingNames.has(name))
-            .map((name: string) => {
-              return this.categorySpecsRepository.create({
-                categoryId: categoryId,
-                name: name,
-              });
+        // Обновляем список характеристик для всех категорий товара
+        const updatedProduct = await this.productsRepository.findOne({ 
+          where: { id },
+          relations: ['categories']
+        });
+        
+        if (updatedProduct && updatedProduct.categories && updatedProduct.categories.length > 0) {
+          for (const category of updatedProduct.categories) {
+            const existingCategorySpecs = await this.categorySpecsRepository.find({
+              where: { categoryId: category.id },
             });
+            const existingNames = new Set(existingCategorySpecs.map(s => s.name));
 
-          if (newCategorySpecs.length > 0) {
-            await this.categorySpecsRepository.save(newCategorySpecs);
+            const newCategorySpecs = specifications
+              .map((spec: { name: string; value: string }) => spec.name)
+              .filter((name: string) => !existingNames.has(name))
+              .map((name: string) => {
+                return this.categorySpecsRepository.create({
+                  categoryId: category.id,
+                  name: name,
+                });
+              });
+
+            if (newCategorySpecs.length > 0) {
+              await this.categorySpecsRepository.save(newCategorySpecs);
+            }
           }
         }
       }

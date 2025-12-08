@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, ManyToMany, OneToMany } from 'typeorm';
 import { Product } from './product.entity';
 import { CategorySpecification } from './category-specification.entity';
 
@@ -19,7 +19,7 @@ export class Category {
   @Column({ type: 'int', default: 0 })
   order: number;
 
-  @OneToMany(() => Product, (product) => product.category)
+  @ManyToMany(() => Product, (product) => product.categories)
   products: Product[];
 
   @OneToMany(() => CategorySpecification, (spec) => spec.category, { cascade: true })
