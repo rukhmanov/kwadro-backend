@@ -322,6 +322,27 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Отправляет запрос на звонок в Telegram группу
+   * @param phone Телефон клиента
+   */
+  async sendCallbackRequestToTelegram(phone: string): Promise<void> {
+    const groupId = this.configService.get<string>('TELEGRAM_GROUP_ID') || 
+                    process.env.TELEGRAM_GROUP_ID || 
+                    '';
+    
+    if (!groupId) {
+      this.logger.warn('TELEGRAM_GROUP_ID не установлен. Запрос на звонок не будет отправлен в Telegram.');
+      return;
+    }
+    
+    const text = `<b>📞 Запрос на звонок</b>\n\n` +
+                 `<b>Телефон:</b> ${this.escapeHtml(phone)}\n` +
+                 `<b>Время:</b> ${new Date().toLocaleString('ru-RU')}`;
+    
+    await this.sendMessageToGroup(groupId, text);
+  }
+
+  /**
    * Отправляет информацию о заказе в Telegram группу
    * @param phone Телефон клиента
    * @param items Массив товаров в заказе

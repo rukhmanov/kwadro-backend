@@ -40,5 +40,10 @@ export class ContactService {
       order: { createdAt: 'DESC' },
     });
   }
+
+  async requestCallback(phone: string): Promise<void> {
+    // Отправляем запрос на звонок в Telegram
+    await this.telegramService.sendCallbackRequestToTelegram(phone);
+  }
 }
 

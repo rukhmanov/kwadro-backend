@@ -12,6 +12,11 @@ export class ContactController {
     return this.contactService.create(contactRequest);
   }
 
+  @Post('callback')
+  requestCallback(@Body() body: { phone: string }) {
+    return this.contactService.requestCallback(body.phone);
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard)
   findAll() {
