@@ -17,6 +17,11 @@ export class ContactController {
     return this.contactService.requestCallback(body.phone);
   }
 
+  @Post('installment')
+  requestInstallment(@Body() body: { phone: string; productName?: string; productPrice?: number }) {
+    return this.contactService.requestInstallment(body.phone, body.productName, body.productPrice);
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard)
   findAll() {

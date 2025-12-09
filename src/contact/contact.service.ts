@@ -45,5 +45,10 @@ export class ContactService {
     // Отправляем запрос на звонок в Telegram
     await this.telegramService.sendCallbackRequestToTelegram(phone);
   }
+
+  async requestInstallment(phone: string, productName?: string, productPrice?: number): Promise<void> {
+    // Отправляем запрос на рассрочку в Telegram
+    await this.telegramService.sendInstallmentRequestToTelegram(phone, productName, productPrice);
+  }
 }
 

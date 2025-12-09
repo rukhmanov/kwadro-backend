@@ -22,7 +22,9 @@ async function bootstrap() {
       { name: 'Экипировка', description: 'Экипировка для мотоциклистов' },
       { name: 'Запасные части', description: 'Запасные части и расходники' },
       { name: 'Масла и смазки', description: 'Моторные масла и смазочные материалы' },
-      { name: 'Техника б/у', description: 'Бывшая в употреблении техника' }
+      { name: 'Техника б/у', description: 'Бывшая в употреблении техника' },
+      { name: 'Моторные масла', description: 'Моторные масла для мототехники' },
+      { name: 'Прочие смазки', description: 'Прочие смазочные материалы' }
     ];
 
     let currentOrder = existingCategories.length;

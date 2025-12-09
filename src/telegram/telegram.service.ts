@@ -343,6 +343,38 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Отправляет запрос на рассрочку в Telegram группу
+   * @param phone Телефон клиента
+   * @param productName Название товара (опционально)
+   * @param productPrice Цена товара (опционально)
+   */
+  async sendInstallmentRequestToTelegram(phone: string, productName?: string, productPrice?: number): Promise<void> {
+    const groupId = this.configService.get<string>('TELEGRAM_GROUP_ID') || 
+                    process.env.TELEGRAM_GROUP_ID || 
+                    '';
+    
+    if (!groupId) {
+      this.logger.warn('TELEGRAM_GROUP_ID не установлен. Запрос на рассрочку не будет отправлен в Telegram.');
+      return;
+    }
+    
+    let text = `<b>💳 Запрос на рассрочку</b>\n\n` +
+               `<b>Телефон:</b> ${this.escapeHtml(phone)}\n`;
+    
+    if (productName) {
+      text += `<b>Товар:</b> ${this.escapeHtml(productName)}\n`;
+    }
+    
+    if (productPrice) {
+      text += `<b>Цена:</b> ${productPrice.toLocaleString('ru-RU')} ₽\n`;
+    }
+    
+    text += `<b>Время:</b> ${new Date().toLocaleString('ru-RU')}`;
+    
+    await this.sendMessageToGroup(groupId, text);
+  }
+
+  /**
    * Отправляет информацию о заказе в Telegram группу
    * @param phone Телефон клиента
    * @param items Массив товаров в заказе
