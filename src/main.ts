@@ -7,7 +7,9 @@ async function bootstrap() {
     origin: [
       'http://localhost:4200',
       'https://rukhmanov-kwadro-frontend-877a.twc1.net',
+      'https://rukhmanov-kwadro-frontend-a087.twc1.net',
       'https://motomarket52r.ru',
+      'https://motomarket52.ru',
     ],
     credentials: true,
   });
