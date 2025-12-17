@@ -12,15 +12,15 @@ export class StorageService {
   private s3Url: string;
 
   constructor(private configService: ConfigService) {
-    this.bucketName = this.configService.get<string>('S3_BUCKET_NAME') || '1f48199c-parsifal-files';
+    this.bucketName = this.configService.get<string>('S3_BUCKET_NAME') || 'e1ba1f72-7761414f-593a-42ea-b9df-8cc7ab126345';
     this.s3Url = this.configService.get<string>('S3_URL') || 'https://s3.twcstorage.ru';
 
     this.s3Client = new S3Client({
       endpoint: this.s3Url,
       region: this.configService.get<string>('S3_REGION') || 'ru-1',
       credentials: {
-        accessKeyId: this.configService.get<string>('S3_ACCESS_KEY') || 'NBGL8RFXPCGH7K3171QS',
-        secretAccessKey: this.configService.get<string>('S3_SECRET_KEY') || 'WZK5OrzfyRqQVA2RjW57mEz75nxHiyjDEtq5iFrv',
+        accessKeyId: this.configService.get<string>('S3_ACCESS_KEY') || 'O1EVZYQ82Z4RPBN01E82',
+        secretAccessKey: this.configService.get<string>('S3_SECRET_KEY') || 'N1tSdSXW4txVBAA1ZLAsltHcIV0r3q9BaYBOINSk',
       },
       forcePathStyle: true,
     });
@@ -94,6 +94,50 @@ export class StorageService {
    * @param expiresIn - время жизни URL в секундах (по умолчанию 7 дней)
    * @returns подписанный URL файла
    */
+  /**
+   * Извлекает ключ файла из полного URL
+   * Работает с любым именем бакета (старым и новым)
+   */
+  private extractKeyFromUrl(url: string): string | null {
+    if (!url) return null;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return url; // Уже ключ, не URL
+    }
+
+    const urlWithoutQuery = url.split('?')[0].split('%3F')[0];
+    const parts = urlWithoutQuery.split('/').filter(part => part.length > 0);
+    
+    // Ищем индекс домена twcstorage.ru
+    const domainIndex = parts.findIndex(part => part.includes('twcstorage.ru'));
+    if (domainIndex < 0) {
+      // Fallback: берем последние 2 части
+      return parts.length >= 2 ? parts.slice(-2).join('/') : null;
+    }
+
+    // После домена идет имя бакета (может быть одно или два раза)
+    // Формат: https://s3.twcstorage.ru/bucket-name/bucket-name/folder/file.ext
+    // или: https://s3.twcstorage.ru/bucket-name/folder/file.ext
+    let startIndex = domainIndex + 1;
+    
+    // Пропускаем имя бакета (может быть дублировано)
+    if (startIndex < parts.length) {
+      const bucketName = parts[startIndex];
+      startIndex++;
+      // Если следующая часть тоже имя бакета (дублирование), пропускаем
+      if (startIndex < parts.length && parts[startIndex] === bucketName) {
+        startIndex++;
+      }
+    }
+
+    // Все что после бакета - это путь к файлу
+    if (startIndex < parts.length) {
+      return parts.slice(startIndex).join('/');
+    }
+
+    // Fallback: берем последние 2 части
+    return parts.length >= 2 ? parts.slice(-2).join('/') : null;
+  }
+
   async getFileUrl(key: string, expiresIn: number = 604800): Promise<string | null> {
     if (!key) return null;
     
@@ -104,15 +148,14 @@ export class StorageService {
         return key;
       }
       // Если это простой URL без подписи, извлекаем ключ и создаем подписанный
-      const parts = key.split('/');
-      const bucketIndex = parts.findIndex(part => part.includes('parsifal-files') || part.includes('twcstorage'));
-      if (bucketIndex >= 0 && bucketIndex < parts.length - 1) {
-        const extractedKey = parts.slice(bucketIndex + 1).join('/');
+      const extractedKey = this.extractKeyFromUrl(key);
+      if (extractedKey) {
         return await this.getSignedFileUrl(extractedKey, expiresIn);
       }
       // Fallback: берем последние части как ключ
-      const extractedKey = parts.slice(-2).join('/');
-      return await this.getSignedFileUrl(extractedKey, expiresIn);
+      const parts = key.split('/');
+      const fallbackKey = parts.slice(-2).join('/');
+      return await this.getSignedFileUrl(fallbackKey, expiresIn);
     }
 
     // Генерируем подписанный URL для ключа

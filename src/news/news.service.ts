@@ -46,14 +46,39 @@ export class NewsService {
   private extractKeyFromUrl(url: string): string | null {
     if (!url) return null;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return url;
+      return url; // Уже ключ, не URL
     }
-    const parts = url.split('/');
-    const bucketIndex = parts.findIndex(part => part.includes('parsifal-files') || part.includes('twcstorage'));
-    if (bucketIndex >= 0 && bucketIndex < parts.length - 1) {
-      return parts.slice(bucketIndex + 1).join('/');
+
+    const urlWithoutQuery = url.split('?')[0].split('%3F')[0];
+    const parts = urlWithoutQuery.split('/').filter(part => part.length > 0);
+    
+    // Ищем индекс домена twcstorage.ru
+    const domainIndex = parts.findIndex(part => part.includes('twcstorage.ru'));
+    if (domainIndex < 0) {
+      // Fallback: берем последние 2 части
+      return parts.length >= 2 ? parts.slice(-2).join('/') : null;
     }
-    return parts.slice(-2).join('/');
+
+    // После домена идет имя бакета (может быть одно или два раза)
+    let startIndex = domainIndex + 1;
+    
+    // Пропускаем имя бакета (может быть дублировано)
+    if (startIndex < parts.length) {
+      const bucketName = parts[startIndex];
+      startIndex++;
+      // Если следующая часть тоже имя бакета (дублирование), пропускаем
+      if (startIndex < parts.length && parts[startIndex] === bucketName) {
+        startIndex++;
+      }
+    }
+
+    // Все что после бакета - это путь к файлу
+    if (startIndex < parts.length) {
+      return parts.slice(startIndex).join('/');
+    }
+
+    // Fallback: берем последние 2 части
+    return parts.length >= 2 ? parts.slice(-2).join('/') : null;
   }
 
   async update(id: number, news: Partial<News>): Promise<News | null> {

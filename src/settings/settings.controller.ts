@@ -43,11 +43,33 @@ export class SettingsController {
     const setting = await this.settingsService.getSetting('background_image');
     if (setting) {
       // Извлекаем ключ из URL для удаления
-      const parts = setting.split('/');
-      const bucketIndex = parts.findIndex(part => part.includes('parsifal-files') || part.includes('twcstorage'));
-      if (bucketIndex >= 0 && bucketIndex < parts.length - 1) {
-        const key = parts.slice(bucketIndex + 1).join('/');
-        await this.storageService.deleteFile(key);
+      const urlWithoutQuery = setting.split('?')[0].split('%3F')[0];
+      const parts = urlWithoutQuery.split('/').filter(part => part.length > 0);
+      
+      // Ищем индекс домена twcstorage.ru
+      const domainIndex = parts.findIndex(part => part.includes('twcstorage.ru'));
+      if (domainIndex >= 0) {
+        // После домена идет имя бакета (может быть одно или два раза)
+        let startIndex = domainIndex + 1;
+        
+        // Пропускаем имя бакета (может быть дублировано)
+        if (startIndex < parts.length) {
+          const bucketName = parts[startIndex];
+          startIndex++;
+          // Если следующая часть тоже имя бакета (дублирование), пропускаем
+          if (startIndex < parts.length && parts[startIndex] === bucketName) {
+            startIndex++;
+          }
+        }
+
+        // Все что после бакета - это путь к файлу
+        if (startIndex < parts.length) {
+          const key = parts.slice(startIndex).join('/');
+          await this.storageService.deleteFile(key);
+        }
+      } else if (!setting.startsWith('http://') && !setting.startsWith('https://')) {
+        // Если это уже ключ (не URL), используем как есть
+        await this.storageService.deleteFile(setting);
       }
     }
     await this.settingsService.setSetting('background_image', null);

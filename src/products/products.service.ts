@@ -267,55 +267,58 @@ export class ProductsService {
     try {
       // Декодируем URL и убираем query string
       const decodedUrl = decodeURIComponent(url);
-      const urlWithoutQuery = decodedUrl.split('?')[0].split('%3F')[0]; // Убираем ? и %3F (закодированный ?)
+      const urlWithoutQuery = decodedUrl.split('?')[0].split('%3F')[0];
+      const parts = urlWithoutQuery.split('/').filter(part => part.length > 0);
       
-      // Извлекаем ключ из URL
-      // Формат: https://s3.twcstorage.ru/1f48199c-parsifal-files/1f48199c-parsifal-files/products/file.ext
-      // Нужно получить: products/file.ext
-      const parts = urlWithoutQuery.split('/');
+      // Ищем индекс домена twcstorage.ru
+      const domainIndex = parts.findIndex(part => part.includes('twcstorage.ru'));
+      if (domainIndex < 0) {
+        // Fallback: берем последние 2 части
+        return parts.length >= 2 ? parts.slice(-2).join('/') : null;
+      }
+
+      // После домена идет имя бакета (может быть одно или два раза)
+      let startIndex = domainIndex + 1;
       
-      // Ищем индекс части с bucket name (parsifal-files или twcstorage)
-      const bucketIndex = parts.findIndex(part => 
-        part.includes('parsifal-files') || part.includes('twcstorage')
-      );
-      
-      if (bucketIndex >= 0) {
-        // Если нашли bucket, берем все после него
-        // Но нужно пропустить дублирующуюся часть bucket name
-        let startIndex = bucketIndex + 1;
-        // Если следующая часть тоже содержит bucket name, пропускаем её
-        if (parts[startIndex] && (parts[startIndex].includes('parsifal-files') || parts[startIndex].includes('twcstorage'))) {
+      // Пропускаем имя бакета (может быть дублировано)
+      if (startIndex < parts.length) {
+        const bucketName = parts[startIndex];
+        startIndex++;
+        // Если следующая часть тоже имя бакета (дублирование), пропускаем
+        if (startIndex < parts.length && parts[startIndex] === bucketName) {
           startIndex++;
         }
-        if (startIndex < parts.length) {
-          return parts.slice(startIndex).join('/');
-        }
       }
-      
-      // Fallback: берем последние 2 части (обычно это folder/file.ext)
-      if (parts.length >= 2) {
-        return parts.slice(-2).join('/');
+
+      // Все что после бакета - это путь к файлу
+      if (startIndex < parts.length) {
+        return parts.slice(startIndex).join('/');
       }
-      
-      return null;
+
+      // Fallback: берем последние 2 части
+      return parts.length >= 2 ? parts.slice(-2).join('/') : null;
     } catch (e) {
       // Если декодирование не удалось, пробуем без декодирования
       const urlWithoutQuery = url.split('?')[0].split('%3F')[0];
-      const parts = urlWithoutQuery.split('/');
-      const bucketIndex = parts.findIndex(part => part.includes('parsifal-files') || part.includes('twcstorage'));
-      if (bucketIndex >= 0) {
-        let startIndex = bucketIndex + 1;
-        if (parts[startIndex] && (parts[startIndex].includes('parsifal-files') || parts[startIndex].includes('twcstorage'))) {
+      const parts = urlWithoutQuery.split('/').filter(part => part.length > 0);
+      const domainIndex = parts.findIndex(part => part.includes('twcstorage.ru'));
+      if (domainIndex < 0) {
+        return parts.length >= 2 ? parts.slice(-2).join('/') : null;
+      }
+
+      let startIndex = domainIndex + 1;
+      if (startIndex < parts.length) {
+        const bucketName = parts[startIndex];
+        startIndex++;
+        if (startIndex < parts.length && parts[startIndex] === bucketName) {
           startIndex++;
         }
-        if (startIndex < parts.length) {
-          return parts.slice(startIndex).join('/');
-        }
       }
-      if (parts.length >= 2) {
-        return parts.slice(-2).join('/');
+
+      if (startIndex < parts.length) {
+        return parts.slice(startIndex).join('/');
       }
-      return null;
+      return parts.length >= 2 ? parts.slice(-2).join('/') : null;
     }
   }
 
