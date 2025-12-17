@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class StorageService {
@@ -132,6 +134,108 @@ export class StorageService {
     });
 
     return await getSignedUrl(this.s3Client, command, { expiresIn });
+  }
+
+  /**
+   * Получает список всех файлов в bucket
+   * @param prefix - префикс для фильтрации (например, 'products/', 'news/')
+   * @returns массив ключей файлов
+   */
+  async listAllFiles(prefix?: string): Promise<string[]> {
+    const allKeys: string[] = [];
+    let continuationToken: string | undefined;
+
+    do {
+      const command = new ListObjectsV2Command({
+        Bucket: this.bucketName,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      });
+
+      const response = await this.s3Client.send(command);
+
+      if (response.Contents) {
+        const keys = response.Contents.map((obj) => obj.Key!).filter(Boolean);
+        allKeys.push(...keys);
+      }
+
+      continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+
+    return allKeys;
+  }
+
+  /**
+   * Скачивает файл из S3 и сохраняет на локальный диск
+   * @param key - ключ файла в S3
+   * @param localPath - путь для сохранения файла на локальном диске
+   * @returns путь к сохраненному файлу
+   */
+  async downloadFile(key: string, localPath: string): Promise<string> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+    });
+
+    const response = await this.s3Client.send(command);
+
+    // Создаем директории, если их нет
+    const dir = path.dirname(localPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Конвертируем stream в buffer и сохраняем
+    const chunks: Uint8Array[] = [];
+    if (response.Body) {
+      for await (const chunk of response.Body as any) {
+        chunks.push(chunk);
+      }
+      const buffer = Buffer.concat(chunks);
+      fs.writeFileSync(localPath, buffer);
+    }
+
+    return localPath;
+  }
+
+  /**
+   * Скачивает все файлы из S3 в указанную локальную директорию
+   * @param localDir - локальная директория для сохранения файлов
+   * @param prefix - префикс для фильтрации файлов (опционально)
+   * @returns объект с информацией о скачанных файлах
+   */
+  async downloadAllFiles(localDir: string, prefix?: string): Promise<{ total: number; downloaded: number; failed: number; errors: string[] }> {
+    const files = await this.listAllFiles(prefix);
+    let downloaded = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    // Создаем директорию, если её нет
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+
+    for (const key of files) {
+      try {
+        // Сохраняем структуру папок из S3
+        const localPath = path.join(localDir, key);
+        await this.downloadFile(key, localPath);
+        downloaded++;
+        console.log(`✓ Скачан: ${key}`);
+      } catch (error) {
+        failed++;
+        const errorMsg = `Ошибка при скачивании ${key}: ${error instanceof Error ? error.message : String(error)}`;
+        errors.push(errorMsg);
+        console.error(`✗ ${errorMsg}`);
+      }
+    }
+
+    return {
+      total: files.length,
+      downloaded,
+      failed,
+      errors,
+    };
   }
 }
 
