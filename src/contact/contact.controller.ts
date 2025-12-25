@@ -22,6 +22,11 @@ export class ContactController {
     return this.contactService.requestInstallment(body.phone, body.productName, body.productPrice);
   }
 
+  @Post('availability')
+  requestAvailability(@Body() body: { phone: string; productId: number; productName?: string }) {
+    return this.contactService.requestAvailability(body.phone, body.productId, body.productName);
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard)
   findAll() {

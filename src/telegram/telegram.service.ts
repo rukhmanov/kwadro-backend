@@ -375,6 +375,38 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Отправляет запрос о наличии товара в Telegram группу
+   * @param phone Телефон клиента
+   * @param productId ID товара
+   * @param productName Название товара (опционально)
+   */
+  async sendAvailabilityRequestToTelegram(phone: string, productId: number, productName?: string): Promise<void> {
+    const groupId = this.configService.get<string>('TELEGRAM_GROUP_ID') || 
+                    process.env.TELEGRAM_GROUP_ID || 
+                    '';
+    
+    if (!groupId) {
+      this.logger.warn('TELEGRAM_GROUP_ID не установлен. Запрос о наличии не будет отправлен в Telegram.');
+      return;
+    }
+    
+    let text = `<b>📦 Уточнить о наличии</b>\n\n` +
+               `<b>Телефон:</b> ${this.escapeHtml(phone)}\n`;
+    
+    if (productId) {
+      text += `<b>ID товара:</b> ${productId}\n`;
+    }
+    
+    if (productName) {
+      text += `<b>Товар:</b> ${this.escapeHtml(productName)}\n`;
+    }
+    
+    text += `<b>Время:</b> ${new Date().toLocaleString('ru-RU')}`;
+    
+    await this.sendMessageToGroup(groupId, text);
+  }
+
+  /**
    * Отправляет информацию о заказе в Telegram группу
    * @param phone Телефон клиента
    * @param items Массив товаров в заказе

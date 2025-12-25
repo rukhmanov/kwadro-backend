@@ -50,5 +50,10 @@ export class ContactService {
     // Отправляем запрос на рассрочку в Telegram
     await this.telegramService.sendInstallmentRequestToTelegram(phone, productName, productPrice);
   }
+
+  async requestAvailability(phone: string, productId: number, productName?: string): Promise<void> {
+    // Отправляем запрос о наличии товара в Telegram
+    await this.telegramService.sendAvailabilityRequestToTelegram(phone, productId, productName);
+  }
 }
 
