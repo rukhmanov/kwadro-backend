@@ -1,6 +1,6 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, NotFoundException, UseInterceptors, UploadedFile } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { CategoriesService } from './categories.service';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, NotFoundException, UseInterceptors, UploadedFiles } from '@nestjs/common';
+import { AnyFilesInterceptor } from '@nestjs/platform-express';
+import { CategoriesService, CategorySpecInput } from './categories.service';
 import { Category } from '../entities/category.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { StorageService } from '../storage/storage.service';
@@ -17,6 +17,12 @@ export class CategoriesController {
     return this.categoriesService.findAll();
   }
 
+  @Post('reorder')
+  @UseGuards(JwtAuthGuard)
+  updateOrder(@Body() categoryOrders: { id: number; order: number }[]): Promise<void> {
+    return this.categoriesService.updateOrder(categoryOrders);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<Category> {
     const category = await this.categoriesService.findOne(+id);
@@ -28,60 +34,24 @@ export class CategoriesController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('image'))
+  @UseInterceptors(AnyFilesInterceptor())
   async create(
     @Body() categoryData: any,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFiles() files?: Express.Multer.File[],
   ): Promise<Category> {
-    let category: Partial<Category>;
-    
-    // Пытаемся распарсить JSON из поля category, если оно есть
-    if (categoryData.category && typeof categoryData.category === 'string') {
-      try {
-        category = JSON.parse(categoryData.category);
-      } catch {
-        category = categoryData;
-      }
-    } else {
-      category = categoryData;
-    }
-    
-    // Загружаем изображение, если оно есть
-    if (file) {
-      const imageKey = await this.storageService.uploadFile(file, 'categories');
-      category.image = imageKey;
-    }
-    
+    const category = await this.parseCategoryPayload(categoryData, files);
     return this.categoriesService.create(category);
   }
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('image'))
+  @UseInterceptors(AnyFilesInterceptor())
   async update(
     @Param('id') id: string,
     @Body() categoryData: any,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFiles() files?: Express.Multer.File[],
   ): Promise<Category> {
-    let category: Partial<Category>;
-    
-    // Пытаемся распарсить JSON из поля category, если оно есть
-    if (categoryData.category && typeof categoryData.category === 'string') {
-      try {
-        category = JSON.parse(categoryData.category);
-      } catch {
-        category = categoryData;
-      }
-    } else {
-      category = categoryData;
-    }
-    
-    // Загружаем новое изображение, если оно есть
-    if (file) {
-      const imageKey = await this.storageService.uploadFile(file, 'categories');
-      category.image = imageKey;
-    }
-    
+    const category = await this.parseCategoryPayload(categoryData, files);
     const updated = await this.categoriesService.update(+id, category);
     if (!updated) {
       throw new NotFoundException('Категория не найдена');
@@ -95,10 +65,48 @@ export class CategoriesController {
     return this.categoriesService.remove(+id);
   }
 
-  @Post('reorder')
-  @UseGuards(JwtAuthGuard)
-  updateOrder(@Body() categoryOrders: { id: number; order: number }[]): Promise<void> {
-    return this.categoriesService.updateOrder(categoryOrders);
+  private async parseCategoryPayload(
+    categoryData: any,
+    files?: Express.Multer.File[],
+  ): Promise<Partial<Category> & { specifications?: CategorySpecInput[] }> {
+    let category: Partial<Category> & { specifications?: CategorySpecInput[] };
+
+    if (categoryData.category && typeof categoryData.category === 'string') {
+      try {
+        category = JSON.parse(categoryData.category);
+      } catch {
+        category = categoryData;
+      }
+    } else {
+      category = categoryData;
+    }
+
+    const specImageKeys = new Map<number, string>();
+    for (const file of files || []) {
+      if (file.fieldname === 'image') {
+        category.image = await this.storageService.uploadFile(file, 'categories');
+      } else if (file.fieldname.startsWith('specImage_')) {
+        const index = Number(file.fieldname.replace('specImage_', ''));
+        if (!Number.isNaN(index)) {
+          specImageKeys.set(index, await this.storageService.uploadFile(file, 'category-specs'));
+        }
+      }
+    }
+
+    if (category.specifications?.length && specImageKeys.size > 0) {
+      category.specifications = category.specifications.map((spec, index) => {
+        const uploadedKey = specImageKeys.get(index);
+        if (!uploadedKey) {
+          return spec;
+        }
+        return {
+          ...spec,
+          image: uploadedKey,
+          removeImage: false,
+        };
+      });
+    }
+
+    return category;
   }
 }
-

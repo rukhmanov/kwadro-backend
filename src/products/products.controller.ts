@@ -22,12 +22,14 @@ export class ProductsController {
     @Query('maxPrice') maxPrice?: string,
     @Query('inStock') inStock?: string,
     @Query('isFeatured') isFeatured?: string,
+    @Query('specs') specs?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ): Promise<Product[] | { products: Product[]; total: number; page: number; limit: number; totalPages: number }> {
     const hasPaginationParams = page !== undefined || limit !== undefined;
     const hasFilterParams = search !== undefined || sortBy !== undefined || sortOrder !== undefined || 
-                           minPrice !== undefined || maxPrice !== undefined || inStock !== undefined || isFeatured !== undefined;
+                           minPrice !== undefined || maxPrice !== undefined || inStock !== undefined || isFeatured !== undefined ||
+                           specs !== undefined;
 
     // Если есть параметры пагинации или фильтров, возвращаем объект с пагинацией
     if (hasPaginationParams || hasFilterParams) {
@@ -40,6 +42,7 @@ export class ProductsController {
         maxPrice: maxPrice ? +maxPrice : undefined,
         inStock: inStock === 'true' ? true : inStock === 'false' ? false : undefined,
         isFeatured: isFeatured === 'true' ? true : isFeatured === 'false' ? false : undefined,
+        specs: specs || undefined,
         page: page ? +page : 1,
         limit: limit ? +limit : 15,
       };
@@ -56,6 +59,11 @@ export class ProductsController {
   @Get('category/:categoryId/specifications')
   async getCategorySpecifications(@Param('categoryId') categoryId: string): Promise<string[]> {
     return this.productsService.getCategorySpecifications(+categoryId);
+  }
+
+  @Get('category/:categoryId/spec-filters')
+  async getCategorySpecFilters(@Param('categoryId') categoryId: string) {
+    return this.productsService.getCategorySpecFilters(+categoryId);
   }
 
   @Get(':id')

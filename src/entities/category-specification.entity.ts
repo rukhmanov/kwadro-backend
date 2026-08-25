@@ -16,6 +16,15 @@ export class CategorySpecification {
   @Column()
   name: string; // Название характеристики (например, "Двигатель", "Мощность")
 
+  @Column('varchar', { nullable: true })
+  image: string | null;
+
+  @Column({ type: 'boolean', default: true })
+  showInCategory: boolean;
+
+  @Column({ type: 'int', default: 0 })
+  order: number;
+
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 }

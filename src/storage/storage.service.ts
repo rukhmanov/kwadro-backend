@@ -10,6 +10,9 @@ export class StorageService {
   private s3Client: S3Client;
   private bucketName: string;
   private s3Url: string;
+  /** Кэш signed URL: один и тот же адрес → браузер реально кэширует файл. */
+  private signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+  private readonly signedUrlSafetyWindowMs = 60 * 60 * 1000; // обновляем за час до истечения
 
   constructor(private configService: ConfigService) {
     this.bucketName = this.configService.get<string>('S3_BUCKET_NAME') || 'e1ba1f72-7761414f-593a-42ea-b9df-8cc7ab126345';
@@ -69,12 +72,28 @@ export class StorageService {
   async deleteFile(key: string): Promise<void> {
     if (!key) return;
 
+    this.invalidateSignedUrlCache(key);
+
     const command = new DeleteObjectCommand({
       Bucket: this.bucketName,
       Key: key,
     });
 
     await this.s3Client.send(command);
+  }
+
+  private invalidateSignedUrlCache(key: string): void {
+    const normalized = key.startsWith('http://') || key.startsWith('https://')
+      ? this.extractKeyFromUrl(key)
+      : key;
+    if (!normalized) {
+      return;
+    }
+    for (const cacheKey of this.signedUrlCache.keys()) {
+      if (cacheKey === normalized || cacheKey.startsWith(`${normalized}|`)) {
+        this.signedUrlCache.delete(cacheKey);
+      }
+    }
   }
 
   /**
@@ -171,12 +190,24 @@ export class StorageService {
   async getSignedFileUrl(key: string, expiresIn: number = 3600): Promise<string | null> {
     if (!key) return null;
 
+    const cacheKey = `${key}|${expiresIn}`;
+    const cached = this.signedUrlCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && cached.expiresAt - this.signedUrlSafetyWindowMs > now) {
+      return cached.url;
+    }
+
     const command = new GetObjectCommand({
       Bucket: this.bucketName,
       Key: key,
     });
 
-    return await getSignedUrl(this.s3Client, command, { expiresIn });
+    const url = await getSignedUrl(this.s3Client, command, { expiresIn });
+    this.signedUrlCache.set(cacheKey, {
+      url,
+      expiresAt: now + expiresIn * 1000,
+    });
+    return url;
   }
 
   /**

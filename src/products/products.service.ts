@@ -7,6 +7,7 @@ import { CartItem } from '../entities/cart-item.entity';
 import { ProductSpecification } from '../entities/product-specification.entity';
 import { CategorySpecification } from '../entities/category-specification.entity';
 import { StorageService } from '../storage/storage.service';
+import { buildSpecValueMap, canonicalizeSpecDisplayName, mergeCategorySpecFilters, normalizeSpecName, parseSpecsQuery } from './spec-filters.util';
 
 @Injectable()
 export class ProductsService {
@@ -75,6 +76,7 @@ export class ProductsService {
     maxPrice?: number;
     inStock?: boolean;
     isFeatured?: boolean;
+    specs?: string;
     page?: number;
     limit?: number;
   }): Promise<{ products: Product[]; total: number; page: number; limit: number; totalPages: number }>;
@@ -87,6 +89,7 @@ export class ProductsService {
     maxPrice?: number;
     inStock?: boolean;
     isFeatured?: boolean;
+    specs?: string;
     page?: number;
     limit?: number;
   }): Promise<Product[] | { products: Product[]; total: number; page: number; limit: number; totalPages: number }> {
@@ -139,6 +142,24 @@ export class ProductsService {
     if (filters?.isFeatured !== undefined) {
       queryBuilder.andWhere('product.isFeatured = :isFeatured', { isFeatured: filters.isFeatured });
     }
+
+    const specFilters = parseSpecsQuery(filters?.specs);
+    Object.entries(specFilters).forEach(([name, values], index) => {
+      const nameParam = `specName${index}`;
+      const valuesParam = `specValues${index}`;
+      queryBuilder.andWhere(
+        `EXISTS (
+          SELECT 1 FROM product_specifications ps
+          WHERE ps."productId" = product.id
+            AND LOWER(TRIM(ps.name)) = LOWER(TRIM(:${nameParam}))
+            AND ps.value IN (:...${valuesParam})
+        )`,
+        {
+          [nameParam]: name,
+          [valuesParam]: values,
+        },
+      );
+    });
 
     // Сортировка
     const sortBy = filters?.sortBy || 'createdAt';
@@ -194,9 +215,71 @@ export class ProductsService {
     const specs = await this.categorySpecsRepository.find({
       where: { categoryId },
       select: ['name'],
+      order: { order: 'ASC', id: 'ASC' },
     });
-    // Возвращаем уникальные названия характеристик
     return [...new Set(specs.map(s => s.name))];
+  }
+
+  async getCategorySpecFilters(categoryId: number): Promise<Array<{
+    id: number;
+    name: string;
+    image: string | null;
+    showInCategory: boolean;
+    order: number;
+    values: string[];
+  }>> {
+    const categorySpecs = await this.categorySpecsRepository.find({
+      where: { categoryId },
+      order: { order: 'ASC', id: 'ASC' },
+    });
+
+    const products = await this.productsRepository
+      .createQueryBuilder('product')
+      .innerJoin('product.categories', 'categories', 'categories.id = :categoryId', { categoryId })
+      .leftJoinAndSelect('product.specifications', 'specifications')
+      .where('product.isActive = :isActive', { isActive: true })
+      .getMany();
+
+    const allProductSpecs = products.flatMap((product) => product.specifications || []);
+    const valueMap = buildSpecValueMap(allProductSpecs);
+    const displayNames = new Map<string, string>();
+    for (const spec of allProductSpecs) {
+      const key = normalizeSpecName(spec.name || '');
+      if (key && !displayNames.has(key)) {
+        displayNames.set(key, (spec.name || '').trim());
+      }
+    }
+
+    const fromCategory = await Promise.all(
+      categorySpecs.map(async (spec) => {
+        let image: string | null = spec.image || null;
+        if (image) {
+          image = (await this.storageService.getFileUrl(image)) || null;
+        }
+        return {
+          id: spec.id,
+          name: canonicalizeSpecDisplayName(spec.name) || spec.name,
+          image,
+          showInCategory: !!spec.showInCategory,
+          order: spec.order || 0,
+          values: valueMap.get(normalizeSpecName(spec.name)) || [],
+        };
+      }),
+    );
+
+    const known = new Set(fromCategory.map((spec) => normalizeSpecName(spec.name)));
+    const extras = [...valueMap.entries()]
+      .filter(([key]) => !known.has(key))
+      .map(([key, values]) => ({
+        id: 0,
+        name: canonicalizeSpecDisplayName(displayNames.get(key) || key) || key,
+        image: null as string | null,
+        showInCategory: false,
+        order: Number.MAX_SAFE_INTEGER,
+        values,
+      }));
+
+    return mergeCategorySpecFilters([...fromCategory, ...extras]);
   }
 
   async create(product: Partial<Product> & { categoryIds?: number[] }): Promise<Product> {
@@ -231,11 +314,16 @@ export class ProductsService {
           const existingCategorySpecs = await this.categorySpecsRepository.find({
             where: { categoryId: category.id },
           });
-          const existingNames = new Set(existingCategorySpecs.map(s => s.name));
+          const existingNames = new Set(
+            existingCategorySpecs.map((s) => (s.name || '').trim().toLowerCase()),
+          );
 
           const newCategorySpecs = specifications
-            .map((spec: { name: string; value: string }) => spec.name)
-            .filter((name: string) => !existingNames.has(name))
+            .map((spec: { name: string; value: string }) => (spec.name || '').trim())
+            .filter((name: string) => name && !existingNames.has(name.toLowerCase()))
+            .filter((name: string, index: number, arr: string[]) =>
+              arr.findIndex((item) => item.toLowerCase() === name.toLowerCase()) === index,
+            )
             .map((name: string) => {
               return this.categorySpecsRepository.create({
                 categoryId: category.id,
@@ -505,11 +593,16 @@ export class ProductsService {
             const existingCategorySpecs = await this.categorySpecsRepository.find({
               where: { categoryId: category.id },
             });
-            const existingNames = new Set(existingCategorySpecs.map(s => s.name));
+            const existingNames = new Set(
+              existingCategorySpecs.map((s) => (s.name || '').trim().toLowerCase()),
+            );
 
             const newCategorySpecs = specifications
-              .map((spec: { name: string; value: string }) => spec.name)
-              .filter((name: string) => !existingNames.has(name))
+              .map((spec: { name: string; value: string }) => (spec.name || '').trim())
+              .filter((name: string) => name && !existingNames.has(name.toLowerCase()))
+              .filter((name: string, index: number, arr: string[]) =>
+                arr.findIndex((item) => item.toLowerCase() === name.toLowerCase()) === index,
+              )
               .map((name: string) => {
                 return this.categorySpecsRepository.create({
                   categoryId: category.id,
