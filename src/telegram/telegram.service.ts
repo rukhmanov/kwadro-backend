@@ -67,8 +67,13 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Не блокируем Nest listen()/healthcheck: api.telegram.org с прода часто ETIMEDOUT
+    void this.startBotInBackground();
+  }
+
+  private async startBotInBackground() {
     try {
-      const botInfo = await this.makeRequest(`${this.apiUrl}/getMe`);
+      const botInfo = await this.makeRequest(`${this.apiUrl}/getMe`, 5000);
       if (botInfo.ok) {
         this.logger.log(`🤖 Telegram бот запущен: @${botInfo.result.username}`);
       } else {
@@ -91,9 +96,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private makeRequest(url: string): Promise<any> {
+  private makeRequest(url: string, timeoutMs = 30000): Promise<any> {
     return new Promise((resolve, reject) => {
-      https.get(url, (res) => {
+      const req = https.get(url, (res) => {
         let data = '';
 
         res.on('data', (chunk) => {
@@ -108,7 +113,14 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
             reject(error);
           }
         });
-      }).on('error', (error) => {
+      });
+
+      req.setTimeout(timeoutMs, () => {
+        req.destroy();
+        reject(new Error(`Telegram request timeout after ${timeoutMs}ms`));
+      });
+
+      req.on('error', (error) => {
         reject(error);
       });
     });
